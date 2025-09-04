@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MySQL Query Runner</title>
+</head>
+<body>
+    <h2>Run SQL Query</h2>
+    <form action="/run_query" method="post">
+        <textarea name="query" rows="4" cols="50" placeholder="Enter SQL query here"></textarea><br><br>
+        <button type="submit">Run Normally</button>
+        <button type="submit" formaction="/run_query" onclick="this.form.query.value='EXPLAIN ' + this.form.query.value">Explain</button>
+        <button type="submit" formaction="/run_query" onclick="this.form.query.value='EXPLAIN ANALYZE ' + this.form.query.value">Explain Analyze</button>
+    </form>
+
+    {% if message %}
+        <p><b>{{ message }}</b></p>
+    {% endif %}
+
+    {% if result %}
+        <h3>Result:</h3>
+        <table border="1" cellpadding="5">
+            <tr>
+                {% for col in columns %}
+                    <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+            {% for row in result %}
+                <tr>
+                    {% for col in row %}
+                        <td>{{ col }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </table>
+    {% endif %}
+
+    {% if explain_output %}
+        <h3>Execution Plan (Raw):</h3>
+        <pre>{{ explain_output }}</pre>
+    {% endif %}
+</body>
+</html>
