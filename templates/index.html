@@ -2,46 +2,444 @@
 <html>
 <head>
     <title>MySQL Query Runner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Google Fonts for modern look -->
+    <link href="https://fonts.googleapis.com/css?family=Inter:400,600&display=swap" rel="stylesheet">
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            background: #181a20;
+            color: #e0e0e0;
+        }
+        .navbar {
+            background: linear-gradient(90deg, #23272f 60%, #1f4037 100%);
+            color: #fff;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 8px rgba(30, 40, 60, 0.18);
+        }
+        .navbar h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 8px rgba(67, 206, 162, 0.08);
+        }
+        .navbar-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+        .navbar a {
+            color: #b2dfdb;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 1rem;
+            padding: 0.25rem 0.8rem;
+            border-radius: 4px;
+            transition: background 0.2s, color 0.2s;
+        }
+        .navbar a:hover, .navbar a.active {
+            background: #263238;
+            color: #fffde7;
+        }
+        .container {
+            max-width: 900px;
+            margin: 2.5rem auto;
+            padding: 2rem 1.5rem;
+            background: #23242a;
+            border-radius: 14px;
+            box-shadow: 0 4px 24px rgba(30, 40, 60, 0.18);
+        }
+        .section {
+            margin-bottom: 2.2rem;
+        }
+        .problem-box {
+            background: linear-gradient(90deg, #23272f 60%, #263238 100%);
+            border-left: 5px solid #00bcd4;
+            padding: 1.3rem 1.2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 188, 212, 0.04);
+        }
+        .problem-box h2 {
+            margin-top: 0;
+            color: #00bcd4;
+        }
+        .query-box {
+            background: #23272f;
+            padding: 1.2rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 6px rgba(0, 188, 212, 0.07);
+        }
+        .query-box h3 {
+            margin-top: 0;
+            color: #00bcd4;
+        }
+        textarea {
+            width: 100%;
+            font-size: 1rem;
+            padding: 0.7rem;
+            border-radius: 6px;
+            border: 1.5px solid #374151;
+            resize: vertical;
+            background: #181a20;
+            color: #e0e0e0;
+            transition: border 0.2s;
+        }
+        textarea:focus {
+            border: 1.5px solid #00bcd4;
+            outline: none;
+        }
+        .btn-group {
+            margin-top: 0.7rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        button {
+            background: linear-gradient(90deg, #00bcd4 60%, #23272f 100%);
+            color: #fff;
+            border: none;
+            padding: 0.38rem 0.85rem;
+            border-radius: 5px;
+            font-size: 0.93rem;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0, 188, 212, 0.08);
+            transition: background 0.2s, transform 0.1s, color 0.2s;
+            outline: none;
+        }
+        button:hover, button:focus {
+            background: linear-gradient(90deg, #0097a7 60%, #263238 100%);
+            color: #b2dfdb;
+            transform: translateY(-2px) scale(1.04);
+        }
+        .message {
+            margin-top: 1rem;
+            font-weight: 600;
+            background: #23272f;
+            border-left: 4px solid #00bcd4;
+            padding: 0.7rem 1.2rem;
+            border-radius: 5px;
+            box-shadow: 0 1px 4px rgba(0, 188, 212, 0.07);
+            color: #b2dfdb;
+        }
+        .message.success {
+            border-left-color: #00e676;
+            background: #1b2e1b;
+            color: #b9f6ca;
+        }
+        .message.error {
+            border-left-color: #ff7043;
+            background: #2a1a1a;
+            color: #ffab91;
+        }
+        .message.info {
+            border-left-color: #00bcd4;
+            background: #23272f;
+            color: #b2dfdb;
+        }
+        .output-section, .explanation-section {
+            background: #1a1c23;
+            padding: 1.1rem 1rem 1.1rem 1rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 6px rgba(0, 188, 212, 0.07);
+            margin-bottom: 2.2rem;
+            position: relative;
+            transition: box-shadow 0.2s;
+        }
+        .output-section.collapsed, .explanation-section.collapsed {
+            max-height: 3.2rem;
+            overflow: hidden;
+            padding-bottom: 0.3rem;
+            cursor: pointer;
+        }
+        .output-header, .explanation-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 0;
+            margin-bottom: 1rem;
+        }
+        .output-header h3, .explanation-header h3 {
+            color: #00e676;
+            margin: 0;
+            font-size: 1.13rem;
+            font-weight: 600;
+        }
+        .header-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .collapse-toggle {
+            background: none;
+            border: none;
+            color: #00bcd4;
+            font-size: 1.05rem;
+            cursor: pointer;
+            padding: 0.18rem 0.5rem;
+            border-radius: 50%;
+            transition: color 0.2s, background 0.2s;
+            margin-left: 0.2rem;
+        }
+        .collapse-toggle:hover {
+            color: #00e676;
+            background: #23272f;
+        }
+        .copy-btn {
+            background: #263238;
+            color: #00bcd4;
+            border: none;
+            padding: 0.18rem 0.9rem;
+            border-radius: 4px;
+            font-size: 0.93rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+        .copy-btn:hover {
+            background: #00bcd4;
+            color: #23272f;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            background: #23272f;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0, 188, 212, 0.04);
+        }
+        th, td {
+            border: 1px solid #374151;
+            padding: 0.6rem;
+            text-align: left;
+        }
+        th {
+            background: #263238;
+            color: #00bcd4;
+        }
+        td {
+            color: #e0e0e0;
+        }
+        pre {
+            background: #23272f;
+            padding: 1rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            overflow-x: auto;
+            color: #b2dfdb;
+        }
+        @media (max-width: 700px) {
+            .container { padding: 1rem; }
+            .problem-box, .query-box, .output-section, .explanation-section { padding: 1rem; }
+            .navbar-links { gap: 0.7rem; }
+            .navbar { flex-direction: column; align-items: flex-start; }
+            button, .copy-btn, .collapse-toggle { font-size: 0.92rem; padding: 0.18rem 0.6rem; }
+            .output-header, .explanation-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+        }
+    </style>
 </head>
 <body>
-    <h2>Run SQL Query</h2>
-    <form action="/run_query" method="post">
-        <textarea name="query" rows="4" cols="50" placeholder="Enter SQL query here"></textarea><br><br>
-        <button type="submit">Run Normally</button>
-        <button type="submit" formaction="/run_query" onclick="this.form.query.value='EXPLAIN ' + this.form.query.value">Explain</button>
-        <button type="submit" formaction="/run_query" onclick="this.form.query.value='EXPLAIN ANALYZE ' + this.form.query.value">Explain Analyze</button>
-    </form>
+    <div class="navbar">
+        <h1>MySQL Query Runner</h1>
+        <div class="navbar-links">
+            <a href="#problem">Problem</a>
+            <a href="#query">Query</a>
+            <a href="#output">Output</a>
+            <a href="#explanation">Explanation</a>
+        </div>
+    </div>
+    <div class="container">
+        <div class="section problem-box" id="problem">
+            <h2>Problem Statement</h2>
+            <p>
+                <strong>Task:</strong> Write a SQL query to display the <b>employee name</b> and <b>department name</b> for all employees by joining the <code>employees</code> and <code>departments</code> tables.<br><br>
+                <strong>Table Descriptions:</strong>
+                <br><br>
+                <b>employees</b>
+                <table style="margin-bottom:1rem;">
+                    <tr>
+                        <th>Column</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td>emp_id</td>
+                        <td>INT</td>
+                        <td>Employee ID (Primary Key)</td>
+                    </tr>
+                    <tr>
+                        <td>emp_name</td>
+                        <td>VARCHAR(100)</td>
+                        <td>Name of the employee</td>
+                    </tr>
+                    <tr>
+                        <td>dept_id</td>
+                        <td>INT</td>
+                        <td>Department ID (Foreign Key)</td>
+                    </tr>
+                </table>
+                <b>departments</b>
+                <table>
+                    <tr>
+                        <th>Column</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td>dept_id</td>
+                        <td>INT</td>
+                        <td>Department ID (Primary Key)</td>
+                    </tr>
+                    <tr>
+                        <td>dept_name</td>
+                        <td>VARCHAR(100)</td>
+                        <td>Name of the department</td>
+                    </tr>
+                </table>
+                <br>
+                <strong>Sample Output:</strong>
+                <table style="background:#23272f;color:#b2dfdb;padding:0.7rem 1rem;border-radius:6px;margin-top:0.5rem;">
+                    <tr>
+                        <th>emp_name</th>
+                        <th>dept_name</th>
+                    </tr>
+                    <tr>
+                        <td>Alice</td>
+                        <td>HR</td>
+                    </tr>
+                    <tr>
+                        <td>Bob</td>
+                        <td>Engineering</td>
+                    </tr>
+                    <tr>
+                        <td>Charlie</td>
+                        <td>Marketing</td>
+                    </tr>
+                </table>
+            </p>
+        </div>
 
-    {% if message %}
-        <p><b>{{ message }}</b></p>
-    {% endif %}
+        <div class="section query-box" id="query">
+            <h3>Enter SQL Query</h3>
+            <form action="/run_query" method="post" autocomplete="off">
+                <textarea name="query" rows="4" placeholder="Enter SQL query here"></textarea><br>
+                <div class="btn-group">
+                    <button type="submit">Run</button>
+                    <button type="submit" formaction="/run_query" onclick="this.form.query.value='EXPLAIN ' + this.form.query.value">Explain</button>
+                    <button type="submit" formaction="/run_query" onclick="this.form.query.value='EXPLAIN ANALYZE ' + this.form.query.value">Analyze</button>
+                </div>
+            </form>
+            {% if message %}
+    <div class="message{% if message_type %} {{ message_type }}{% endif %}">
+        {{ message }}
+    </div>
+{% endif %}
+        </div>
 
-    {% if raw_html %}
-        <h3>Execution Plan:</h3>
-        {{ raw_html|safe }}
-    {% endif %}
-
-    {% if result %}
-        <h3>Result:</h3>
-        <table border="1" cellpadding="5">
-            <tr>
-                {% for col in columns %}
-                    <th>{{ col }}</th>
-                {% endfor %}
-            </tr>
-            {% for row in result %}
-                <tr>
-                    {% for col in row %}
-                        <td>{{ col }}</td>
+        <div class="section output-section" id="output">
+            <div class="output-header">
+                <h3>Output</h3>
+                <div class="header-actions">
+                    <button class="copy-btn" type="button" id="copyResultBtn" style="display:none;">Copy</button>
+                    <button class="collapse-toggle" type="button" data-target="#output">&#9660;</button>
+                </div>
+            </div>
+            <div class="output-content">
+            {% if raw_html %}
+                <h4>Execution Plan:</h4>
+                {{ raw_html|safe }}
+            {% endif %}
+            {% if result %}
+                <h4>Result:</h4>
+                <table id="resultTable">
+                    <tr>
+                        {% for col in columns %}
+                            <th>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                    {% for row in result %}
+                        <tr>
+                            {% for col in row %}
+                                <td>{{ col }}</td>
+                            {% endfor %}
+                        </tr>
                     {% endfor %}
-                </tr>
-            {% endfor %}
-        </table>
-    {% endif %}
+                </table>
+                <script>
+                    document.getElementById('copyResultBtn').style.display = 'inline-block';
+                </script>
+            {% endif %}
+            {% if explain_output %}
+                <h4>Execution Plan (Raw):</h4>
+                <pre>{{ explain_output }}</pre>
+            {% endif %}
+            </div>
+        </div>
 
-    {% if explain_output %}
-        <h3>Execution Plan (Raw):</h3>
-        <pre>{{ explain_output }}</pre>
-    {% endif %}
+        <div class="section explanation-section" id="explanation">
+            <div class="explanation-header">
+                <h3>Explanation</h3>
+                <button class="collapse-toggle" type="button" data-target="#explanation">&#9660;</button>
+            </div>
+            <div class="explanation-content">
+            <p>
+                <!-- You can dynamically fill this with explanations or keep it static -->
+                The output above displays the result of your SQL query. If you used "Explain" or "Analyze", you will see the execution plan, which helps you understand how the database processes your query.
+            </p>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Smooth scroll for navbar links
+        $('.navbar a').on('click', function(e) {
+            var target = $(this).attr('href');
+            if (target.startsWith('#')) {
+                e.preventDefault();
+                $('html, body').animate({
+                    scrollTop: $(target).offset().top - 60
+                }, 500);
+                $('.navbar a').removeClass('active');
+                $(this).addClass('active');
+            }
+        });
+
+        // Collapsible Output/Explanation
+        $('.collapse-toggle').on('click', function() {
+            var section = $(this).closest('.section');
+            section.toggleClass('collapsed');
+            var icon = $(this);
+            if (section.hasClass('collapsed')) {
+                icon.html('&#9654;');
+            } else {
+                icon.html('&#9660;');
+            }
+        });
+
+        // Copy to clipboard for result table
+        $('#copyResultBtn').on('click', function() {
+            var table = document.getElementById('resultTable');
+            if (!table) return;
+            var range = document.createRange();
+            range.selectNode(table);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            try {
+                document.execCommand('copy');
+                $(this).text('Copied!');
+                setTimeout(() => { $(this).text('Copy'); }, 1200);
+            } catch (err) {
+                $(this).text('Failed');
+            }
+            window.getSelection().removeAllRanges();
+        });
+    </script>
 </body>
 </html>
