@@ -16,6 +16,11 @@
         <p><b>{{ message }}</b></p>
     {% endif %}
 
+    {% if raw_html %}
+        <h3>Execution Plan:</h3>
+        {{ raw_html|safe }}
+    {% endif %}
+
     {% if result %}
         <h3>Result:</h3>
         <table border="1" cellpadding="5">
