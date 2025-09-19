@@ -79,12 +79,43 @@ def optimize_sql(query, conn):
             flags=re.IGNORECASE
         )
 
+    # -----------------------------------
+    # Rule 3: IN (subquery) → EXISTS rewrite (unified for alias/no-alias)
+    # -----------------------------------
+    in_match = re.search(
+        r"(?:([\w]+)\.)?(\w+)\s+IN\s*\(\s*SELECT\s+([\w\.]+)\s+FROM\s+(\w+)(?:\s+(\w+))?(.*?)(?:\))",
+        optimized_query,
+        re.IGNORECASE | re.DOTALL,
+    )
 
-    # -----------------------------------
-    # Rule 3: IN (subquery) → EXISTS suggestion
-    # -----------------------------------
-    if re.search(r"\bIN\s*\(\s*SELECT", optimized_query, re.IGNORECASE):
-        hints.append("Consider rewriting IN (subquery) as EXISTS for better performance on large datasets.")
+    if in_match:
+        outer_alias, outer_col, inner_col, inner_table, alias, rest = in_match.groups()
+        rest = rest.strip()
+
+        # Use alias if provided, else fallback to table name
+        alias = alias or inner_table
+
+        # Build join condition safely
+        if re.search(r"\bWHERE\b", rest, re.IGNORECASE):
+            join_condition = f" AND {inner_col} = {outer_alias+'.' if outer_alias else ''}{outer_col}"
+        else:
+            join_condition = f" WHERE {alias}.{inner_col} = {outer_alias+'.' if outer_alias else ''}{outer_col}"
+
+        # Clean up multiple WHEREs
+        rest = re.sub(r"^\s*WHERE", " WHERE", rest, flags=re.IGNORECASE)
+
+        exists_clause = f"EXISTS (SELECT 1 FROM {inner_table} {alias}{rest}{join_condition})"
+
+        optimized_query = re.sub(
+            r"(?:[\w]+\.)?\w+\s+IN\s*\(\s*SELECT.*?\)",
+            exists_clause,
+            optimized_query,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        hints.append("Rewrote IN (subquery) as EXISTS for improved performance.")
+
+
 
     # -----------------------------------
     # Rule 4: OR conditions → UNION suggestion
@@ -133,8 +164,76 @@ def optimize_sql(query, conn):
     # -----------------------------------
     # Rule 8: Functions on indexed column in WHERE
     # -----------------------------------
-    if re.search(r"(LOWER|UPPER|TRIM|SUBSTR|ROUND)\(", optimized_query, re.IGNORECASE):
-        hints.append("Function applied to column in WHERE clause – may prevent index usage.")
+  
+    func_match = re.search(
+        r"(LOWER|UPPER|TRIM|SUBSTR|ROUND|INSTR)\s*\(\s*([\w\.]+)(?:\s*,\s*'([^']+)')?(?:\s*,\s*(\d+))?\)",
+        optimized_query,
+        re.IGNORECASE,
+    )
+
+    if func_match:
+        func, col, str_val, arg_num = func_match.groups()
+        func = func.upper()
+        col = col.strip()
+
+        if func == "LOWER":
+            optimized_query = re.sub(
+                rf"{func}\(\s*{col}\s*\)\s*=\s*'([^']+)'",
+                lambda m: f"{col} = LOWER('{m.group(1)}')",
+                optimized_query,
+                flags=re.IGNORECASE,
+            )
+            hints.append(f"Rewrote LOWER({col}) for index usage.")
+
+        elif func == "UPPER":
+            optimized_query = re.sub(
+                rf"{func}\(\s*{col}\s*\)\s*=\s*'([^']+)'",
+                lambda m: f"{col} = UPPER('{m.group(1)}')",
+                optimized_query,
+                flags=re.IGNORECASE,
+            )
+            hints.append(f"Rewrote UPPER({col}) for index usage.")
+
+        elif func == "TRIM":
+            optimized_query = re.sub(
+                rf"{func}\(\s*{col}\s*\)\s*=\s*'([^']+)'",
+                lambda m: f"{col} = TRIM('{m.group(1)}')",
+                optimized_query,
+                flags=re.IGNORECASE,
+            )
+            hints.append(f"Rewrote TRIM({col}) for index usage.")
+
+        elif func == "SUBSTR":
+            optimized_query = re.sub(
+                rf"SUBSTR\(\s*{col}\s*,\s*(\d+)\s*,\s*(\d+)\)\s*=\s*'([^']+)'",
+                lambda m: (
+                    f"{col} LIKE '{m.group(3)}%'" if m.group(1) == "1"
+                    else f"{col} LIKE '{'_'*(int(m.group(1))-1)}{m.group(3)}%'"
+                ),
+                optimized_query,
+                flags=re.IGNORECASE,
+            )
+            hints.append(f"Rewrote SUBSTR({col},start,len) for index usage.")
+
+        elif func == "ROUND":
+            optimized_query = re.sub(
+                rf"ROUND\(\s*{col}\s*\)\s*=\s*(\d+)",
+                lambda m: f"{col} BETWEEN {int(m.group(1))-0.5} AND {int(m.group(1))+0.5}",
+                optimized_query,
+                flags=re.IGNORECASE,
+            )
+            hints.append(f"Rewrote ROUND({col}) for index usage.")
+
+        elif func == "INSTR":
+            # INSTR(col,'str') > 0 → col LIKE '%str%'
+            optimized_query = re.sub(
+                rf"INSTR\(\s*{col}\s*,\s*'([^']+)'\s*\)\s*>\s*0",
+                lambda m: f"{col} LIKE '%{m.group(1)}%'",
+                optimized_query,
+                flags=re.IGNORECASE,
+            )
+            hints.append(f"Rewrote INSTR({col},'{str_val}') > 0 → {col} LIKE '%{str_val}%' for index usage.")
+
 
     # -----------------------------------
     # Rule 9: COUNT(*) misuse
@@ -156,58 +255,70 @@ def optimize_sql(query, conn):
 
     return optimized_query
 
-import re
-
 def parse_explain_text(raw_rows):
     structured = []
 
     for row in raw_rows:
+        # Convert row to string if tuple
         text = row[0] if isinstance(row, tuple) else str(row)
 
-        # Remove arrow "->"
-        text = text.lstrip("-> ").strip()
+        # Split multi-line plans into separate lines
+        lines = text.split("\n")
 
-        # Split metrics (everything in parentheses)
-        parts = re.split(r"\((?=[a-z])", text)  # split at "(cost=", "(actual time=" etc.
-        step_part = parts[0].strip()
-        metrics = " ".join("(" + p for p in parts[1:]) if len(parts) > 1 else ""
+        for line in lines:
+            line = line.rstrip()
+            if not line.strip():
+                continue
 
-        # Extract cost, rows, actual time, loops
-        cost = rows = act_time = act_rows = loops = ""
-        if "cost=" in metrics:
-            m = re.search(r"cost=([\d\.]+)", metrics)
+            # Count indentation
+            indent_level = 0
+            stripped = line
+            while stripped.startswith(" "):
+                indent_level += 1
+                stripped = stripped[1:]
+            if stripped.startswith("->"):
+                indent_level += 1
+                stripped = stripped[2:].strip()
+
+            # Extract only the operation name for Step
+            step_name_match = re.match(r"([a-zA-Z ]+(?:on <[^>]+>)?)", stripped)
+            if step_name_match:
+                step_name = step_name_match.group(1).strip()
+            else:
+                step_name = stripped.split(":")[0].strip()
+
+            # Everything else is Condition
+            condition = stripped[len(step_name):].strip().lstrip(":").strip()
+
+            # Extract metrics
+            cost = est_rows = act_time = act_rows = loops = ""
+            m = re.search(r"cost=([\d\.]+)", line)
             if m: cost = m.group(1)
-        if "rows=" in metrics:
-            m = re.findall(r"rows=(\d+)", metrics)
-            if m:
-                rows = m[0]          # estimated rows (first occurrence)
-                if len(m) > 1:
-                    act_rows = m[-1] # actual rows (last occurrence)
-        if "actual time=" in metrics:
-            m = re.search(r"actual time=([\d\.\.]+)", metrics)
+            rows = re.findall(r"rows=(\d+)", line)
+            if rows:
+                est_rows = rows[0]
+                if len(rows) > 1: act_rows = rows[-1]
+            m = re.search(r"actual time=([\d\.\.]+)", line)
             if m: act_time = m.group(1)
-        if "loops=" in metrics:
-            m = re.search(r"loops=(\d+)", metrics)
+            m = re.search(r"loops=(\d+)", line)
             if m: loops = m.group(1)
 
-        # Detect condition (inside step_part after colon)
-        condition = ""
-        if ":" in step_part:
-            step_name, condition = step_part.split(":", 1)
-            step_part = step_name.strip()
-            condition = condition.strip()
-
-        structured.append({
-            "Step": step_part,
-            "Condition": condition,
-            "Cost": cost,
-            "Est. Rows": rows,
-            "Actual Time": act_time,
-            "Actual Rows": act_rows,
-            "Loops": loops
-        })
+            structured.append({
+                "Indent": indent_level,
+                "Step": step_name,
+                "Condition": condition,
+                "Cost": cost,
+                "Est. Rows": est_rows,
+                "Actual Time": act_time,
+                "Actual Rows": act_rows,
+                "Loops": loops
+            })
 
     return structured
+
+
+
+
 
 
 # -----------------------------
