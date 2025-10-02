@@ -9,11 +9,18 @@ app = Flask(__name__)
 db_config = {
     'host': 'localhost',
     'user': 'root',          # change this
-    'password': 'password',  # change this
+    'password': 'aditya39',  # change this
     'database': 'testdb',
     'cursorclass': pymysql.cursors.Cursor
 }
 
+db1_config = {
+    'host': 'localhost',
+    'user': 'root', # change this
+    'password': 'aditya39', # change this
+    'database': 'testdb_copy',
+    'cursorclass': pymysql.cursors.Cursor
+}
 # -----------------------------
 # 1. RULE ENGINE
 # -----------------------------
@@ -62,7 +69,7 @@ def optimize_sql(query, conn):
             flags=re.IGNORECASE,
         )
 
-     # -----------------------------------
+    # -----------------------------------
     # Rule 2: MONTH(col) = value → BETWEEN
     # -----------------------------------
   
@@ -92,16 +99,13 @@ def optimize_sql(query, conn):
         outer_alias, outer_col, inner_col, inner_table, alias, rest = in_match.groups()
         rest = rest.strip()
 
-        # Use alias if provided, else fallback to table name
         alias = alias or inner_table
 
-        # Build join condition safely
         if re.search(r"\bWHERE\b", rest, re.IGNORECASE):
             join_condition = f" AND {inner_col} = {outer_alias+'.' if outer_alias else ''}{outer_col}"
         else:
             join_condition = f" WHERE {alias}.{inner_col} = {outer_alias+'.' if outer_alias else ''}{outer_col}"
 
-        # Clean up multiple WHEREs
         rest = re.sub(r"^\s*WHERE", " WHERE", rest, flags=re.IGNORECASE)
 
         exists_clause = f"EXISTS (SELECT 1 FROM {inner_table} {alias}{rest}{join_condition})"
@@ -116,12 +120,23 @@ def optimize_sql(query, conn):
         hints.append("Rewrote IN (subquery) as EXISTS for improved performance.")
 
 
-
     # -----------------------------------
     # Rule 4: OR conditions → UNION suggestion
     # -----------------------------------
-    if re.search(r"\sOR\s", optimized_query, re.IGNORECASE):
-        hints.append("Multiple OR conditions detected – consider UNION ALL or indexes for better optimization.")
+    or_block_match = re.search(
+        r"(SELECT\s+.*?\s+FROM\s+\w+\s+WHERE\s+)(.*?)(\s*;|$)",
+        optimized_query,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if or_block_match:
+        select_clause, where_conditions, _ = or_block_match.groups()
+
+        if re.search(r"\s+or\s+", where_conditions, re.IGNORECASE) and not re.search(r"\bAND\b|\(|\)", where_conditions, re.IGNORECASE):
+            conditions = re.split(r"\s+or\s+", where_conditions, flags=re.IGNORECASE)
+            union_parts = [f"{select_clause}{cond.strip()}" for cond in conditions]
+            optimized_query = " UNION ALL ".join(union_parts)
+            hints.append("Rewrote OR conditions as UNION ALL for better index utilization.")
 
     # -----------------------------------
     # Rule 5: DISTINCT + GROUP BY redundancy
@@ -136,7 +151,6 @@ def optimize_sql(query, conn):
     if order_match and "limit" not in optimized_query.lower():
         hints.append("ORDER BY without LIMIT – may cause unnecessary full sort on large datasets.")
         
-        # Extract table name from FROM clause (simple regex, assumes single table)
         table_match = re.search(r"\bfrom\s+([`]?[\w]+[`]?)", optimized_query, re.IGNORECASE)
         if table_match:
             table_name = table_match.group(1).strip('`')
@@ -152,8 +166,6 @@ def optimize_sql(query, conn):
 
         optimized_query = optimized_query.strip().rstrip(";") + f" LIMIT {total_rows};"
         hints.append(f"Applied dynamic LIMIT of {total_rows} to optimize sorting.")
-
-        
 
     # -----------------------------------
     # Rule 7: LIKE with leading wildcard
@@ -225,7 +237,6 @@ def optimize_sql(query, conn):
             hints.append(f"Rewrote ROUND({col}) for index usage.")
 
         elif func == "INSTR":
-            # INSTR(col,'str') > 0 → col LIKE '%str%'
             optimized_query = re.sub(
                 rf"INSTR\(\s*{col}\s*,\s*'([^']+)'\s*\)\s*>\s*0",
                 lambda m: f"{col} LIKE '%{m.group(1)}%'",
@@ -259,10 +270,8 @@ def parse_explain_text(raw_rows):
     structured = []
 
     for row in raw_rows:
-        # Convert row to string if tuple
         text = row[0] if isinstance(row, tuple) else str(row)
 
-        # Split multi-line plans into separate lines
         lines = text.split("\n")
 
         for line in lines:
@@ -270,7 +279,6 @@ def parse_explain_text(raw_rows):
             if not line.strip():
                 continue
 
-            # Count indentation
             indent_level = 0
             stripped = line
             while stripped.startswith(" "):
@@ -280,17 +288,14 @@ def parse_explain_text(raw_rows):
                 indent_level += 1
                 stripped = stripped[2:].strip()
 
-            # Extract only the operation name for Step
             step_name_match = re.match(r"([a-zA-Z ]+(?:on <[^>]+>)?)", stripped)
             if step_name_match:
                 step_name = step_name_match.group(1).strip()
             else:
                 step_name = stripped.split(":")[0].strip()
 
-            # Everything else is Condition
             condition = stripped[len(step_name):].strip().lstrip(":").strip()
 
-            # Extract metrics
             cost = est_rows = act_time = act_rows = loops = ""
             m = re.search(r"cost=([\d\.]+)", line)
             if m: cost = m.group(1)
@@ -315,19 +320,6 @@ def parse_explain_text(raw_rows):
             })
 
     return structured
-
-
-
-
-
-
-# -----------------------------
-# 2. PARSE EXPLAIN PLAN
-# -----------------------------
-# def parse_explain(cursor):
-#     rows = cursor.fetchall()
-#     columns = [desc[0] for desc in cursor.description]
-#     return rows, columns
 
 
 # -----------------------------
@@ -357,7 +349,29 @@ def analyze_query(query):
         cursor.close()
         connection.close()
 
+def analyzeop_query(query):
+    connection = pymysql.connect(**db1_config)
+    cursor = connection.cursor()
+    try:
+        try:
+            cursor.execute("EXPLAIN ANALYZE " + query)
+        except:
+            cursor.execute("EXPLAIN " + query)
 
+        raw_rows = cursor.fetchall()
+        structured = parse_explain_text(raw_rows)
+
+        return {
+            "query": query,
+            "plan": structured
+        }
+
+    except Exception as e:
+        return {"query": query, "error": str(e)}
+
+    finally:
+        cursor.close()
+        connection.close()
 
 
 # -----------------------------
@@ -372,14 +386,12 @@ def home():
 def run_query():
     user_query = request.form['query'].strip()
 
-    # Original query
     original = analyze_query(user_query)
 
-    # Optimized query
-    conn = pymysql.connect(**db_config)
+    conn = pymysql.connect(**db1_config)
     optimized_sql = optimize_sql(user_query, conn)
     conn.close()
-    optimized = analyze_query(optimized_sql)
+    optimized = analyzeop_query(optimized_sql)
 
     return render_template(
         'index.html',
