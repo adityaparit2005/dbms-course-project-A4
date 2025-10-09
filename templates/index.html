@@ -70,11 +70,13 @@
         .hints {
             margin-top: 10px;
             font-size: 14px;
-            padding-left: 20px;
+            padding-left: 0;
+            display: block;
         }
-        .hints li {
+        .hints .hint-item {
             margin-bottom: 5px;
             color: #17a2b8;
+            padding-left: 20px;
         }
         tbody tr:nth-child(odd) {
              background-color: #fdfdfd;
@@ -93,6 +95,9 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.15);
             text-align: center;
         }
+        .efficiency-container.good { background-color: #28a745; }
+        .efficiency-container.bad { background-color: #dc3545; }
+        .efficiency-container.neutral { background-color: #6c757d; }
         .efficiency-metric {
             font-size: 1em;
             margin-top: 5px;
@@ -100,6 +105,19 @@
         }
         .time-metric { background-color: #28a745; border-radius: 4px; padding: 2px 6px; }
         .cost-metric { background-color: #ffc107; color: #333; border-radius: 4px; padding: 2px 6px; }
+        /* Plan step indentation classes (padding-left = 12 + indent*25 px) */
+        .plan-step { padding-left: 12px; }
+        .indent-0 { padding-left: 12px; }
+        .indent-1 { padding-left: 37px; }
+        .indent-2 { padding-left: 62px; }
+        .indent-3 { padding-left: 87px; }
+        .indent-4 { padding-left: 112px; }
+        .indent-5 { padding-left: 137px; }
+        .indent-6 { padding-left: 162px; }
+        .indent-7 { padding-left: 187px; }
+        .indent-8 { padding-left: 212px; }
+        .indent-9 { padding-left: 237px; }
+        .indent-10 { padding-left: 262px; }
     </style>
 </head>
 <body>
@@ -114,26 +132,16 @@
         </form>
 
         {% if original %}
-            
-            {% if efficiency_metrics and efficiency_metrics.composite_score is not none %}
-                {% set composite = efficiency_metrics.composite_score %}
-                {% set time_eff = efficiency_metrics.time_efficiency %}
-                {% set cost_eff = efficiency_metrics.cost_efficiency %}
-                
-                {% if composite is not none %}
-                    {% set color = '#28a745' if composite > 0 else ('#dc3545' if composite < 0 else '#6c757d') %}
-                {% else %}
-                    {% set color = '#6c757d' %} {# Default color for unavailable data #}
-                {% endif %}
 
-                <div class="efficiency-container" style="background-color: {{ color }};">
+            {% if composite_score is not none or time_efficiency is not none or cost_efficiency is not none %}
+                <div class="efficiency-container {{ display_class }}">
                     📊 Composite Efficiency (Weighted Score): 
                     <strong>
-                        {{ (composite | round(2)) if composite is not none else 'N/A' }}%
+                        {{ (composite_score | round(2)) if composite_score is not none else 'N/A' }}%
                     </strong>
                     
-                    <span class="efficiency-metric time-metric">Time Efficiency: {{ (time_eff | round(2)) if time_eff is not none else 'N/A' }}%</span>
-                    <span class="efficiency-metric cost-metric">Cost Efficiency: {{ (cost_eff | round(2)) if cost_eff is not none else 'N/A' }}%</span>
+                    <span class="efficiency-metric time-metric">Time Efficiency: {{ (time_efficiency | round(2)) if time_efficiency is not none else 'N/A' }}%</span>
+                    <span class="efficiency-metric cost-metric">Cost Efficiency: {{ (cost_efficiency | round(2)) if cost_efficiency is not none else 'N/A' }}%</span>
                 </div>
             {% endif %}
 
@@ -143,23 +151,18 @@
                     <pre>{{ original.query }}</pre>
                     <p><strong>Total Time:</strong> {{ original.total_time_ms | round(3) }} ms</p>
                     <p><strong>Planner Cost:</strong> {{ original.planner_cost | round(2) }}</p>
-                    {% if original.error %} <p class="error">Error: {{ original.error }}</p> {% endif %}
+                    {% if original.get('error') %} <p class="error">Error: {{ original.get('error') }}</p> {% endif %}
                 </div>
                 <div class="col-md-6">
                     <h3>Optimized Query:</h3>
-                    <pre>{{ optimized.query.split('--')[0].strip() }}</pre>
+                    <pre>{{ optimized.get('query_base', optimized.query) }}</pre>
                     <p><strong>Total Time:</strong> {{ optimized.total_time_ms | round(3) }} ms</p>
                     <p><strong>Planner Cost:</strong> {{ optimized.planner_cost | round(2) }}</p>
-                    {% if optimized.error %} <p class="error">Error: {{ optimized.error }}</p> {% endif %}
+                    {% if optimized.get('error') %} <p class="error">Error: {{ optimized.get('error') }}</p> {% endif %}
 
-                    {% set hints_list = optimized.query.split('--')[1:] %}
-                    {% if hints_list %}
+                    {% if optimized.get('hints_list') %}
                         <h4 class="mt-3">💡 Optimization Hints:</h4>
-                        <ul class="hints">
-                            {% for hint in hints_list %}
-                                <li>{{ hint.strip() }}</li>
-                            {% endfor %}
-                        </ul>
+                        <div class="hints">{% for hint in optimized.get('hints_list') %}<div class="hint-item">{{ hint }}</div>{% endfor %}</div>
                     {% endif %}
                 </div>
             </div>
@@ -186,7 +189,7 @@
                             <tbody>
                                 {% for row in original.plan %}
                                 <tr>
-                                    <td style="padding-left: {{ 12 + row.get('Indent', 0) * 25 }}px;">{{ row.get('Step', 'N/A') }}</td>
+                                    <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
                                     <td>{{ row.get('Cost', '') }}</td>
                                     <td>{{ row.get('Est. Rows', '') }}</td>
                                     <td>{{ row.get('Actual Time', '') }}</td>
@@ -219,7 +222,7 @@
                             <tbody>
                                 {% for row in optimized.plan %}
                                 <tr>
-                                    <td style="padding-left: {{ 12 + row.get('Indent', 0) * 25 }}px;">{{ row.get('Step', 'N/A') }}</td>
+                                    <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
                                     <td>{{ row.get('Cost', '') }}</td>
                                     <td>{{ row.get('Est. Rows', '') }}</td>
                                     <td>{{ row.get('Actual Time', '') }}</td>

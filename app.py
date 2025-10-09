@@ -12,7 +12,7 @@ app = Flask(__name__)
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'aditya39', 
+    'password': 'aditya', 
     'database': 'testdb',
     'port': 3306,
     'cursorclass': pymysql.cursors.Cursor
@@ -20,8 +20,8 @@ db_config = {
 db1_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'aditya39', 
-    'database': 'testdb_copy',
+    'password': 'aditya', 
+    'database': 'testdb',
     'port': 3306,
     'cursorclass': pymysql.cursors.Cursor
 }
@@ -473,18 +473,20 @@ def analyze_query(query, db_conf):
                 "Actual Time": actual_time_str,
                 "Actual Rows": str(int(actual_rows_f)),
                 "Loops": str(int(loops_f)),
+                # Precompute padding for display (avoid template math)
+                "PaddingLeftPx": 12 + (indent * 25),
             })
 
         # --- Fallback if EXPLAIN returns no lines ---
         if not plan_data:
-            plan_data = [{"Step": "No plan returned. Query executed successfully but EXPLAIN output was empty (possibly UNION or complex query)."}]
+            plan_data = [{"Step": "No plan returned. Query executed successfully but EXPLAIN output was empty (possibly UNION or complex query).", "PaddingLeftPx": 12}]
 
         return plan_data, total_time, planner_cost
 
     except Exception as e:
         # Return diagnostic row instead of silent failure
         return (
-            [{"Step": f"EXPLAIN ANALYZE failed: {str(e)}"}],
+            [{"Step": f"EXPLAIN ANALYZE failed: {str(e)}", "PaddingLeftPx": 12}],
             0.0,
             0.0,
         )
@@ -569,13 +571,35 @@ def run_query():
         'total_time_ms': optimized_time, 'planner_cost': optimized_cost
     }
 
+    # Precompute values that are more reliable/safe to access from the template
+    # Split out base optimized query and any appended hints (lines starting with --)
+    hints_raw = optimized_sql.split('--')[1:]
+    hints_list = [h.strip() for h in hints_raw if h and h.strip()]
+    optimized_data['query_base'] = optimized_query_base
+    optimized_data['hints_list'] = hints_list
+
     efficiency_metrics = calculate_efficiency_metrics(original_data, optimized_data)
+
+    # Expose metric pieces separately for simpler template usage
+    composite_score = efficiency_metrics.get('composite_score')
+    time_efficiency = efficiency_metrics.get('time_efficiency')
+    cost_efficiency = efficiency_metrics.get('cost_efficiency')
+
+    # Choose a display CSS class server-side to avoid inline styles in template
+    if composite_score is None:
+        display_class = 'neutral'
+    else:
+        display_class = 'good' if composite_score > 0 else ('bad' if composite_score < 0 else 'neutral')
 
     return render_template(
         'index.html',
         original=original_data,
         optimized=optimized_data,
         efficiency_metrics=efficiency_metrics,
+        composite_score=composite_score,
+        time_efficiency=time_efficiency,
+        cost_efficiency=cost_efficiency,
+    display_class=display_class,
         db_config=db_config,
         db1_config=db1_config
     )
