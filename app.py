@@ -542,6 +542,10 @@ def calculate_efficiency_metrics(original, optimized):
 def home():
     return render_template('index.html', db_config=db_config, db1_config=db1_config)
 
+@app.route('/schema')
+def schema():
+    return render_template('schema.html')
+
 
 @app.route('/run_query', methods=['POST'])
 def run_query():

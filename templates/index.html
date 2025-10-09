@@ -2,111 +2,257 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SQL Query Optimizer</title>
     <style>
+        :root {
+            --bg-dark: #1a1a1a;
+            --bg-darker: #121212;
+            --text-primary: #e1e1e1;
+            --text-secondary: #888;
+            --accent-primary: #00ff9d;
+            --accent-secondary: #2196F3;
+            --border-color: #333;
+            --table-header: #2d2d2d;
+            --table-row-odd: #262626;
+            --table-row-even: #1e1e1e;
+            --nav-hover: #2d2d2d;
+            --error-bg: #2c1215;
+            --error-border: #dc3545;
+            --error-text: #ff4d5f;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            margin: 20px;
-            background-color: #f8f9fa;
-            color: #333;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
         }
-        h1, h3, h4 {
-            color: #0056b3;
+
+        .navbar {
+            background-color: var(--bg-darker);
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-brand {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .nav-link {
+            color: var(--text-primary);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            background-color: var(--nav-hover);
+            color: var(--accent-primary);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        h1, h3, h4, h5 {
+            color: var(--accent-primary);
+            margin-bottom: 1.5rem;
+        }
+
         textarea {
             width: 100%;
             height: 150px;
-            font-family: "Courier New", Courier, monospace;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
             font-size: 14px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 15px;
             box-sizing: border-box;
+            background-color: var(--bg-darker);
+            color: var(--text-primary);
+            resize: vertical;
         }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(0, 255, 157, 0.2);
+        }
+
         button {
-            padding: 10px 20px;
+            padding: 12px 24px;
             font-size: 16px;
-            background-color: #007bff;
-            color: white;
+            background-color: var(--accent-primary);
+            color: var(--bg-darker);
             border: none;
-            border-radius: 5px;
+            border-radius: 6px;
             cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
         }
+
         button:hover {
-            background-color: #0056b3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 255, 157, 0.3);
         }
+
         table {
-            border-collapse: collapse;
-            margin-top: 15px;
             width: 100%;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background-color: var(--bg-darker);
+            border-radius: 8px;
+            overflow: hidden;
         }
+
         th, td {
-            border: 1px solid #ddd;
-            padding: 8px 12px;
+            padding: 12px 15px;
             text-align: left;
+            border: 1px solid var(--border-color);
         }
+
         th {
-            background: #e9ecef;
+            background-color: var(--table-header);
+            color: var(--accent-primary);
             font-weight: 600;
         }
-        .error {
-            color: #dc3545;
-            font-weight: bold;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            padding: 10px;
-            border-radius: 5px;
+
+        tbody tr:nth-child(odd) {
+            background-color: var(--table-row-odd);
         }
+
+        tbody tr:nth-child(even) {
+            background-color: var(--table-row-even);
+        }
+
+        .error {
+            color: var(--error-text);
+            font-weight: bold;
+            background-color: var(--error-bg);
+            border: 1px solid var(--error-border);
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem 0;
+        }
+
         pre {
-            background: #e9ecef;
-            padding: 12px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            background-color: var(--bg-darker);
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
             white-space: pre-wrap;
             word-wrap: break-word;
-            font-family: "Courier New", Courier, monospace;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            color: var(--text-primary);
         }
+
         .hints {
-            margin-top: 10px;
-            font-size: 14px;
-            padding-left: 0;
-            display: block;
+            margin-top: 1rem;
+            padding: 0;
         }
-        .hints .hint-item {
-            margin-bottom: 5px;
-            color: #17a2b8;
-            padding-left: 20px;
+
+        .hint-item {
+            margin-bottom: 0.75rem;
+            color: var(--accent-secondary);
+            padding: 0.5rem 1rem;
+            background-color: rgba(33, 150, 243, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-secondary);
         }
-        tbody tr:nth-child(odd) {
-             background-color: #fdfdfd;
-        }
-        tbody tr:nth-child(even) {
-             background-color: #f7f7f7;
-        }
+
         .efficiency-container {
-            margin: 20px 0;
-            padding: 15px;
+            margin: 2rem 0;
+            padding: 1.5rem;
             border-radius: 8px;
-            font-size: 1.1em;
-            font-weight: bold;
-            color: #fff;
-            background-color: #007bff;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
             text-align: center;
+            background-color: var(--bg-darker);
+            border: 1px solid var(--accent-primary);
         }
-        .efficiency-container.good { background-color: #28a745; }
-        .efficiency-container.bad { background-color: #dc3545; }
-        .efficiency-container.neutral { background-color: #6c757d; }
+
+        .efficiency-container.good {
+            border-color: #28a745;
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+
+        .efficiency-container.bad {
+            border-color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+
+        .efficiency-container.neutral {
+            border-color: #6c757d;
+            background-color: rgba(108, 117, 125, 0.1);
+        }
+
         .efficiency-metric {
-            font-size: 1em;
-            margin-top: 5px;
-            display: block;
+            font-size: 0.9rem;
+            margin-top: 0.75rem;
+            display: inline-block;
+            margin: 0.5rem;
         }
-        .time-metric { background-color: #28a745; border-radius: 4px; padding: 2px 6px; }
-        .cost-metric { background-color: #ffc107; color: #333; border-radius: 4px; padding: 2px 6px; }
-        /* Plan step indentation classes (padding-left = 12 + indent*25 px) */
-        .plan-step { padding-left: 12px; }
+
+        .time-metric {
+            background-color: rgba(40, 167, 69, 0.2);
+            color: #28a745;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+
+        .cost-metric {
+            background-color: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 2rem 0;
+        }
+
+        /* Plan step indentation classes */
+        .plan-step {
+            padding-left: 12px;
+            color: var(--text-primary);
+        }
+
         .indent-0 { padding-left: 12px; }
         .indent-1 { padding-left: 37px; }
         .indent-2 { padding-left: 62px; }
@@ -118,10 +264,36 @@
         .indent-8 { padding-left: 212px; }
         .indent-9 { padding-left: 237px; }
         .indent-10 { padding-left: 262px; }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .nav-links {
+                flex-direction: column;
+                width: 100%;
+                text-align: center;
+            }
+
+            .row {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">SQL Query Optimizer ⚡</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link active">Query Optimizer</a>
+                <a href="/schema" class="nav-link">Database Schema</a>
+            </div>
+        </div>
+    </nav>
         <h1>SQL Query Optimizer ⚙️</h1>
 
         
