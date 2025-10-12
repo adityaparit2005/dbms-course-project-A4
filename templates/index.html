@@ -301,6 +301,20 @@
             color: var(--text-primary);
         }
 
+        /* NEW: enforce wrapping for the Step column when it grows > 40% */
+        .explain-table {
+            table-layout: auto; /* allow other columns to size normally */
+            width: 100%;
+        }
+        .explain-table th:first-child,
+        .explain-table td:first-child {
+            width: 40%;
+            max-width: 40%;
+            white-space: normal;       /* allow wrapping */
+            overflow-wrap: anywhere;   /* break long tokens if needed */
+            word-break: break-word;
+        }
+
         .indent-0 { padding-left: 12px; }
         .indent-1 { padding-left: 37px; }
         .indent-2 { padding-left: 62px; }
@@ -397,7 +411,7 @@
                         <h5>💠 Original Plan (Plan A)</h5>
                         {% if original.plan %}
                             <div class="table-responsive">
-                                <table>
+                                <table class="explain-table">
                                 <thead>
                                 <tr>
                                     <th>Step</th>
@@ -430,7 +444,7 @@
                     <h5>💫 Optimized Plan (Plan B)</h5>
                     {% if optimized.plan %}
                         <div class="table-responsive">
-                            <table>
+                            <table class="explain-table">
                             <thead>
                                 <tr>
                                     <th>Step</th>

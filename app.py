@@ -53,7 +53,6 @@ def optimize_sql(query, conn):
     # -----------------------------------
     # Rule 1: SELECT * → expand explicit columns
     # -----------------------------------
-    # Correct regex to escape *
     if re.search(r"select\s+\*", optimized_query, re.IGNORECASE):
         try:
             match = re.search(r"from\s+([a-zA-Z0-9_]+)", optimized_query, re.IGNORECASE)
@@ -74,7 +73,7 @@ def optimize_sql(query, conn):
 
 
 # -----------------------------------
-# Rule 2: YEAR() / MONTH() → BETWEEN (Unified and Smart)
+# Rule 2: YEAR() / MONTH() → BETWEEN 
 # -----------------------------------
 
     year_month_match = re.findall(
@@ -84,7 +83,6 @@ def optimize_sql(query, conn):
     )
 
     if year_month_match:
-        # Collect all YEAR() and MONTH() usages by column
         column_years = {}
         column_months = {}
 
@@ -95,7 +93,6 @@ def optimize_sql(query, conn):
             elif func == "MONTH" and 1 <= num <= 12:
                 column_months[col] = num
 
-        # Merge YEAR+MONTH where both exist
         for col in set(list(column_years.keys()) + list(column_months.keys())):
             if col in column_years and col in column_months:
                 year = column_years[col]
@@ -103,7 +100,6 @@ def optimize_sql(query, conn):
                 last_day = calendar.monthrange(year, month)[1]
                 combined_clause = f"{col} BETWEEN '{year}-{month:02d}-01' AND '{year}-{month:02d}-{last_day:02d}'"
 
-                # Remove both YEAR() and MONTH() conditions and replace with one BETWEEN
                 optimized_query = re.sub(
                     rf"YEAR\s*\(\s*{col}\s*\)\s*=\s*\d{{4}}\s*(AND|OR)?\s*MONTH\s*\(\s*{col}\s*\)\s*=\s*\d{{1,2}}",
                     combined_clause,
@@ -112,7 +108,6 @@ def optimize_sql(query, conn):
                 )
                 hints.append(f"Combined YEAR({col}) and MONTH({col}) into single BETWEEN range for better performance.")
 
-            # Only YEAR() present
             elif col in column_years and col not in column_months:
                 year = column_years[col]
                 optimized_query = re.sub(
@@ -123,7 +118,6 @@ def optimize_sql(query, conn):
                 )
                 hints.append(f"Rewrote YEAR({col}) = {year} into BETWEEN for index usage.")
 
-            # Only MONTH() present
             elif col in column_months and col not in column_years:
                 month = column_months[col]
                 year = datetime.date.today().year
@@ -136,18 +130,15 @@ def optimize_sql(query, conn):
     # Rule 3: IN (subquery) → EXISTS rewrite
     # -----------------------------------
 
-    # Regex to safely capture the subquery's components.
-    # Important changes:
-    # - The optional inner-alias group uses a negative lookahead so it won't capture the keyword WHERE as an alias.
-    # - The WHERE clause contents (if any) are captured without the leading 'WHERE' word.
+    
     in_clause_regex = r"""
-        (?:([\w\.]+)\.)?              # 1: Optional outer alias (e.g., "s")
-        (\w+)\s+IN\s*\(              # 2: Outer column (e.g., "dept_id")
-        \s*SELECT\s+([\w\.]+)\s+    # 3: Inner column (e.g., "dept_id" or "e.dept_id")
-        FROM\s+(\w+)                   # 4: Inner table (e.g., "enrollments")
-        (?:\s+(?!WHERE\b)(\w+))?      # 5: Optional inner alias (e.g., "e") - don't capture 'WHERE'
-        (?:\s+WHERE\s+(.*?))?          # 6: Optional WHERE clause contents (without the word WHERE)
-        \s*\)                          # Match the final parenthesis
+        (?:([\w\.]+)\.)?              
+        (\w+)\s+IN\s*\(              
+        \s*SELECT\s+([\w\.]+)\s+    
+        FROM\s+(\w+)                 
+        (?:\s+(?!WHERE\b)(\w+))?      
+        (?:\s+WHERE\s+(.*?))?         
+        \s*\)                        
     """
 
     in_match = re.search(in_clause_regex, optimized_query, re.IGNORECASE | re.VERBOSE | re.DOTALL)
@@ -155,17 +146,12 @@ def optimize_sql(query, conn):
     if in_match:
         outer_alias, outer_col, inner_col, inner_table, alias, where_contents = in_match.groups()
 
-        # Use provided alias if present, otherwise fall back to the inner table name
         subquery_alias = alias or inner_table
 
-        # Normalize column references: outer column may or may not have an alias
         outer_column_ref = f"{outer_alias}.{outer_col}" if outer_alias else outer_col
 
-        # If the outer column had no alias, generate one and try to inject it into the outer FROM clause.
-        # Heuristic: find the last FROM that appears before the IN(subquery) match and add an alias if missing.
         if not outer_alias:
             try:
-                # limit search to text before the matched IN to avoid touching the subquery's FROM
                 prior_text = optimized_query[:in_match.start()]
                 from_iter = list(re.finditer(r"\bFROM\s+([`]?[-\w\.]+[`]?)(?:\s+AS\s+([`]?[-\w]+[`]?))?", prior_text, re.IGNORECASE))
                 if from_iter:
@@ -173,30 +159,21 @@ def optimize_sql(query, conn):
                     table_token = last_from.group(1)
                     existing_alias = last_from.group(2)
                     if not existing_alias:
-                        # create a deterministic alias
                         generated_outer_alias = f"o_{re.sub(r'[^0-9a-zA-Z]', '_', outer_col)}"
-                        # replace only that FROM occurrence with an alias added
                         start, end = last_from.span()
                         replacement = f"FROM {table_token} AS {generated_outer_alias}"
                         prior_text = prior_text[:start] + replacement + prior_text[end:]
-                        # recombine the query
                         optimized_query = prior_text + optimized_query[in_match.start():]
                         outer_alias = generated_outer_alias
                         outer_column_ref = f"{outer_alias}.{outer_col}"
             except Exception:
-                # If anything fails, keep outer_column_ref as-is and proceed without injecting alias
                 pass
 
-        # Use only the inner column name (strip any alias like 'e.dept_id' -> 'dept_id')
         inner_col_name = inner_col.split('.')[-1]
 
-        # Build the join condition referencing the subquery alias explicitly
-        # Format: <subquery_alias>.<inner_col_name> = <outer_column_ref>
         join_condition = f"{subquery_alias}.{inner_col_name} = {outer_column_ref}"
 
-        # If the subquery already had a WHERE body, combine with AND, otherwise create a WHERE
         if where_contents and where_contents.strip():
-            # where_contents does not contain the leading 'WHERE'
             final_subquery_content = f"WHERE {where_contents.strip()} AND {join_condition}"
         else:
             final_subquery_content = f"WHERE {join_condition}"
@@ -204,7 +181,6 @@ def optimize_sql(query, conn):
         alias_str = f" {alias}" if alias else ""
         exists_clause = f"EXISTS (SELECT 1 FROM {inner_table}{alias_str} {final_subquery_content})"
 
-        # Replace the exact matched subquery text with the constructed EXISTS clause (only first occurrence)
         full_match_text = in_match.group(0)
         optimized_query = optimized_query.replace(full_match_text, exists_clause, 1)
 
@@ -225,15 +201,12 @@ def optimize_sql(query, conn):
     if or_block_match:
         select_clause, where_conditions, end_symbol = or_block_match.groups()
 
-        # Only rewrite if OR exists (and no complex AND/parentheses)
         if re.search(r"\s+or\s+", where_conditions, re.IGNORECASE) and not re.search(r"\bAND\b|\(|\)", where_conditions, re.IGNORECASE):
             conditions = re.split(r"\s+or\s+", where_conditions, flags=re.IGNORECASE)
 
-            # Build UNION ALL parts
             union_parts = [f"{select_clause}{cond.strip()}" for cond in conditions]
             optimized_query = " UNION ALL ".join(union_parts)
 
-            # Ensure semicolon termination
             optimized_query = optimized_query.strip()
             if not optimized_query.endswith(";"):
                 optimized_query += ";"
@@ -282,64 +255,61 @@ def optimize_sql(query, conn):
 
 
     # -----------------------------------
-    # Rule 8: Non-Sargable Function Rewrites (REPLACED WITH PROVIDED LOGIC)
+    # Rule 8: Non-Sargable Function Rewrites 
     # -----------------------------------
-    
+
+    substr_pattern = r"SUBSTR\(\s*([\w\.]+)\s*,\s*(\d+)\s*,\s*(\d+)\)\s*=\s*'([^']+)'"
+    def _substr_to_like(m):
+        col_name = m.group(1)
+        start_pos = int(m.group(2))
+        literal = m.group(4)
+        if start_pos <= 1:
+            return f"{col_name} LIKE '{literal}%'"
+        else:
+            return f"{col_name} LIKE '{'_'*(start_pos-1)}{literal}%'"
+    new_query, subs = re.subn(substr_pattern, _substr_to_like, optimized_query, flags=re.IGNORECASE)
+    if subs:
+        optimized_query = new_query
+        hints.append("Rewrote SUBSTR(...) = '...' to LIKE when safe (uses '_' for fixed offset).")
+
     func_match = re.search(
-        r"(LOWER|UPPER|TRIM|SUBSTR|ROUND|INSTR)\s*\(\s*([\w\.]+)(?:\s*,\s*'([^']+)')?(?:\s*,\s*(\d+))?\)",
+        r"(LOWER|UPPER|SUBSTR|ROUND|INSTR)\s*\(\s*([\w\.]+)(?:\s*,\s*'([^']+)')?(?:\s*,\s*(\d+))?\)",
         optimized_query,
         re.IGNORECASE,
     )
-
 
     if func_match:
         func, col, str_val, arg_num = func_match.groups()
         func = func.upper()
         col = col.strip()
 
-
         if func == "LOWER":
             optimized_query = re.sub(
-                rf"LOWER\(\s*{col}\s*\)\s*=\s*'([^']+)'",
+                rf"{func}\(\s*{col}\s*\)\s*=\s*'([^']+)'",
                 lambda m: f"{col} = LOWER('{m.group(1)}')",
                 optimized_query,
                 flags=re.IGNORECASE,
             )
             hints.append(f"Rewrote LOWER({col}) for index usage.")
 
-
         elif func == "UPPER":
             optimized_query = re.sub(
-                rf"UPPER\(\s*{col}\s*\)\s*=\s*'([^']+)'",
+                rf"{func}\(\s*{col}\s*\)\s*=\s*'([^']+)'",
                 lambda m: f"{col} = UPPER('{m.group(1)}')",
                 optimized_query,
                 flags=re.IGNORECASE,
             )
             hints.append(f"Rewrote UPPER({col}) for index usage.")
 
-
-        elif func == "TRIM":
-            optimized_query = re.sub(
-                rf"TRIM\(\s*{col}\s*\)\s*=\s*'([^']+)'",
-                lambda m: f"{col} = TRIM('{m.group(1)}')",
-                optimized_query,
-                flags=re.IGNORECASE,
-            )
-            hints.append(f"Rewrote TRIM({col}) for index usage.")
-
-
+      
         elif func == "SUBSTR":
             optimized_query = re.sub(
-                rf"SUBSTR\(\s*{col}\s*,\s*(\d+)\s*,\s*(\d+)\)\s*=\s*'[^']+'",
-                lambda m: (
-                    f"{col} LIKE '{m.group(3)}%'" if m.group(1) == "1"
-                    else f"{col} LIKE '{'_'*(int(m.group(1))-1)}{m.group(3)}%'"
-                ),
+                rf"{func}\(\s*{col}\s*,\s*(\d+)\s*,\s*(\d+)\)\s*=\s*'([^']+)'",
+                lambda m:  f"{col} LIKE '{m.group(3)}%'" ,         
                 optimized_query,
                 flags=re.IGNORECASE,
             )
             hints.append(f"Rewrote SUBSTR({col},start,len) for index usage.")
-
 
         elif func == "ROUND":
             optimized_query = re.sub(
@@ -350,8 +320,8 @@ def optimize_sql(query, conn):
             )
             hints.append(f"Rewrote ROUND({col}) for index usage.")
 
-
         elif func == "INSTR":
+            # INSTR(col,'str') > 0 → col LIKE '%str%'
             optimized_query = re.sub(
                 rf"INSTR\(\s*{col}\s*,\s*'([^']+)'\s*\)\s*>\s*0",
                 lambda m: f"{col} LIKE '%{m.group(1)}%'",
@@ -359,7 +329,7 @@ def optimize_sql(query, conn):
                 flags=re.IGNORECASE,
             )
             hints.append(f"Rewrote INSTR({col},'{str_val}') > 0 → {col} LIKE '%{str_val}%' for index usage.")
-    
+
     # -----------------------------------
     # Rule 9: COUNT(*) misuse
     # -----------------------------------
