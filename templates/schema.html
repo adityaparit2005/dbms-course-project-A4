@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Database Schema - SQL Query Optimizer</title>
+    <style>
+        @import url('https://fonts.cdnfonts.com/css/amasis-mt-pro');
+        
+        :root {
+            --bg-dark: #1C1C1C;
+            --bg-darker: #141414;
+            --text-primary: #F5F5F5;
+            --text-secondary: #B0B0B0;
+            --accent-primary: #4A90E2;
+            --accent-secondary: #81A1C1;
+            --border-color: #2A2A2A;
+            --table-header: #252525;
+            --table-row-odd: #1E1E1E;
+            --table-row-even: #1A1A1A;
+            --nav-hover: #2A2A2A;
+        }
+
+        body {
+            font-family: 'Amasis MT Pro', 'Palatino', 'Book Antiqua', Georgia, serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.7;
+            letter-spacing: 0.01em;
+        }
+
+        .navbar {
+            background-color: var(--bg-darker);
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-brand {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .nav-link {
+            color: var(--text-primary);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            background-color: var(--nav-hover);
+            color: var(--accent-primary);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .schema-section {
+            background-color: var(--bg-darker);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .schema-title {
+            color: var(--accent-primary);
+            margin-top: 0;
+            margin-bottom: 1rem;
+            font-size: 1.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .schema-title i {
+            font-size: 1.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background-color: var(--bg-darker);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--table-header);
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+
+        tbody tr:nth-child(odd) {
+            background-color: var(--table-row-odd);
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: var(--table-row-even);
+        }
+
+        .key-column {
+            color: var(--accent-secondary);
+            font-weight: 500;
+        }
+
+        .table-name {
+            font-size: 1.2rem;
+            color: var(--accent-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .table-meta {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .nav-links {
+                flex-direction: column;
+                width: 100%;
+                text-align: center;
+            }
+
+            table {
+                display: block;
+                overflow-x: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">SQL Query Optimizer ⚡</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Query Optimizer</a>
+                <a href="/schema" class="nav-link active">Database Schema</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <section class="schema-section">
+            <h2 class="schema-title">📚 Students Table</h2>
+            <p class="table-meta">Main table storing student information including personal details and department association</p>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Type</th>
+                            <th>Null</th>
+                            <th>Key</th>
+                            <th>Default</th>
+                            <th>Extra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="key-column">student_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>PRI</td>
+                            <td>NULL</td>
+                            <td>auto_increment</td>
+                        </tr>
+                        <tr>
+                            <td>first_name</td>
+                            <td>varchar(50)</td>
+                            <td>NO</td>
+                            <td></td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>last_name</td>
+                            <td>varchar(50)</td>
+                            <td>NO</td>
+                            <td></td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>dept_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>MUL</td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>enrollment_year</td>
+                            <td>year</td>
+                            <td>NO</td>
+                            <td></td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>email</td>
+                            <td>varchar(100)</td>
+                            <td>YES</td>
+                            <td>UNI</td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="schema-section">
+            <h2 class="schema-title">📝 Enrollments Table</h2>
+            <p class="table-meta">Junction table managing student course enrollments and grades</p>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Type</th>
+                            <th>Null</th>
+                            <th>Key</th>
+                            <th>Default</th>
+                            <th>Extra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="key-column">enroll_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>PRI</td>
+                            <td>NULL</td>
+                            <td>auto_increment</td>
+                        </tr>
+                        <tr>
+                            <td>student_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>MUL</td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>course_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>MUL</td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>semester</td>
+                            <td>varchar(10)</td>
+                            <td>YES</td>
+                            <td></td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>grade</td>
+                            <td>char(2)</td>
+                            <td>YES</td>
+                            <td></td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="schema-section">
+            <h2 class="schema-title">🏢 Departments Table</h2>
+            <p class="table-meta">Reference table for academic departments</p>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Type</th>
+                            <th>Null</th>
+                            <th>Key</th>
+                            <th>Default</th>
+                            <th>Extra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="key-column">dept_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>PRI</td>
+                            <td>NULL</td>
+                            <td>auto_increment</td>
+                        </tr>
+                        <tr>
+                            <td>dept_name</td>
+                            <td>varchar(100)</td>
+                            <td>NO</td>
+                            <td>UNI</td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="schema-section">
+            <h2 class="schema-title">📚 Courses Table</h2>
+            <p class="table-meta">Course catalog with department associations</p>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Type</th>
+                            <th>Null</th>
+                            <th>Key</th>
+                            <th>Default</th>
+                            <th>Extra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="key-column">course_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>PRI</td>
+                            <td>NULL</td>
+                            <td>auto_increment</td>
+                        </tr>
+                        <tr>
+                            <td>course_name</td>
+                            <td>varchar(150)</td>
+                            <td>NO</td>
+                            <td></td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td>dept_id</td>
+                            <td>int</td>
+                            <td>NO</td>
+                            <td>MUL</td>
+                            <td>NULL</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

@@ -2,109 +2,348 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SQL Query Optimizer</title>
     <style>
+        @import url('https://fonts.cdnfonts.com/css/amasis-mt-pro');
+        
+        :root {
+            --bg-dark: #1C1C1C;
+            --bg-darker: #141414;
+            --text-primary: #F5F5F5;
+            --text-secondary: #B0B0B0;
+            --accent-primary: #4A90E2;
+            --accent-secondary: #81A1C1;
+            --border-color: #2A2A2A;
+            --table-header: #252525;
+            --table-row-odd: #1E1E1E;
+            --table-row-even: #1A1A1A;
+            --nav-hover: #2A2A2A;
+            --error-bg: #2D1C1E;
+            --error-border: #CF6679;
+            --error-text: #FF8A9E;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            margin: 20px;
-            background-color: #f8f9fa;
-            color: #333;
+            font-family: 'Amasis MT Pro', 'Palatino', 'Book Antiqua', Georgia, serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.7;
+            letter-spacing: 0.01em;
         }
-        h1, h3, h4 {
-            color: #0056b3;
+
+        .navbar {
+            background-color: var(--bg-darker);
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-brand {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .nav-link {
+            color: var(--text-primary);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            background-color: var(--nav-hover);
+            color: var(--accent-primary);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        h1, h3, h4, h5 {
+            color: var(--accent-primary);
+            margin-bottom: 1.5rem;
+        }
+
         textarea {
             width: 100%;
             height: 150px;
-            font-family: "Courier New", Courier, monospace;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
             font-size: 14px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 15px;
             box-sizing: border-box;
+            background-color: var(--bg-darker);
+            color: var(--text-primary);
+            resize: vertical;
         }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(0, 255, 157, 0.2);
+        }
+
         button {
-            padding: 10px 20px;
+            padding: 12px 24px;
             font-size: 16px;
-            background-color: #007bff;
-            color: white;
+            background-color: var(--accent-primary);
+            color: var(--bg-darker);
             border: none;
-            border-radius: 5px;
+            border-radius: 6px;
             cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        table {
-            border-collapse: collapse;
-            margin-top: 15px;
-            width: 100%;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px 12px;
-            text-align: left;
-        }
-        th {
-            background: #e9ecef;
             font-weight: 600;
+            transition: all 0.3s ease;
         }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 255, 157, 0.3);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 1rem 0;
+            background-color: var(--bg-darker);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            border-right: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--table-header);
+            color: var(--accent-primary);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+
+        th:last-child, td:last-child {
+            border-right: none;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        tbody tr:nth-child(odd) {
+            background-color: var(--table-row-odd);
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: var(--table-row-even);
+        }
+        
+        tbody tr:hover {
+            background-color: var(--nav-hover);
+        }
+
+        .table-responsive {
+            margin: 1rem 0;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow-x: auto;
+            background-color: var(--bg-darker);
+        }
+
         .error {
-            color: #dc3545;
+            color: var(--error-text);
             font-weight: bold;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            padding: 10px;
-            border-radius: 5px;
+            background-color: var(--error-bg);
+            border: 1px solid var(--error-border);
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem 0;
         }
+
         pre {
-            background: #e9ecef;
-            padding: 12px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            background-color: var(--bg-darker);
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
             white-space: pre-wrap;
             word-wrap: break-word;
-            font-family: "Courier New", Courier, monospace;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            color: var(--text-primary);
         }
+
         .hints {
-            margin-top: 10px;
-            font-size: 14px;
-            padding-left: 20px;
+            margin-top: 1rem;
+            padding: 0;
         }
-        .hints li {
-            margin-bottom: 5px;
-            color: #17a2b8;
+
+        .hint-item {
+            margin-bottom: 0.75rem;
+            color: var(--accent-secondary);
+            padding: 0.5rem 1rem;
+            background-color: rgba(33, 150, 243, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-secondary);
         }
-        tbody tr:nth-child(odd) {
-             background-color: #fdfdfd;
-        }
-        tbody tr:nth-child(even) {
-             background-color: #f7f7f7;
-        }
+
         .efficiency-container {
-            margin: 20px 0;
-            padding: 15px;
+            margin: 2rem 0;
+            padding: 1.5rem;
             border-radius: 8px;
-            font-size: 1.1em;
-            font-weight: bold;
-            color: #fff;
-            background-color: #007bff;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
             text-align: center;
+            background-color: var(--bg-darker);
+            border: 1px solid var(--accent-primary);
         }
+
+        .efficiency-container.good {
+            border-color: #28a745;
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+
+        .efficiency-container.bad {
+            border-color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+
+        .efficiency-container.neutral {
+            border-color: #6c757d;
+            background-color: rgba(108, 117, 125, 0.1);
+        }
+
         .efficiency-metric {
-            font-size: 1em;
-            margin-top: 5px;
-            display: block;
+            font-size: 0.9rem;
+            margin-top: 0.75rem;
+            display: inline-block;
+            margin: 0.5rem;
         }
-        .time-metric { background-color: #28a745; border-radius: 4px; padding: 2px 6px; }
-        .cost-metric { background-color: #ffc107; color: #333; border-radius: 4px; padding: 2px 6px; }
+
+        .time-metric {
+            background-color: rgba(40, 167, 69, 0.2);
+            color: #28a745;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+
+        .cost-metric {
+            background-color: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .execution-plan {
+            background-color: var(--bg-darker);
+            border-radius: 8px;
+            padding: 2rem;
+            margin: 2rem -1rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .execution-plan h4 {
+            margin-top: 0;
+            color: var(--accent-primary);
+            font-size: 1.5rem;
+        }
+
+        .execution-plan h5 {
+            color: var(--accent-secondary);
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 2rem 0;
+        }
+
+        /* Plan step indentation classes */
+        .plan-step {
+            padding-left: 12px;
+            color: var(--text-primary);
+        }
+
+        .indent-0 { padding-left: 12px; }
+        .indent-1 { padding-left: 37px; }
+        .indent-2 { padding-left: 62px; }
+        .indent-3 { padding-left: 87px; }
+        .indent-4 { padding-left: 112px; }
+        .indent-5 { padding-left: 137px; }
+        .indent-6 { padding-left: 162px; }
+        .indent-7 { padding-left: 187px; }
+        .indent-8 { padding-left: 212px; }
+        .indent-9 { padding-left: 237px; }
+        .indent-10 { padding-left: 262px; }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .nav-links {
+                flex-direction: column;
+                width: 100%;
+                text-align: center;
+            }
+
+            .row {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>SQL Query Optimizer ⚙️</h1>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">SQL Query Optimizer ⚡</a>
+            <div class="nav-links">
+                <a href="/" class="nav-link active">Query Optimizer</a>
+                <a href="/schema" class="nav-link">Database Schema</a>
+            </div>
+        </div>
+    </nav>
+        
+    
 
         
         <form method="post" action="/run_query">
@@ -114,26 +353,16 @@
         </form>
 
         {% if original %}
-            
-            {% if efficiency_metrics and efficiency_metrics.composite_score is not none %}
-                {% set composite = efficiency_metrics.composite_score %}
-                {% set time_eff = efficiency_metrics.time_efficiency %}
-                {% set cost_eff = efficiency_metrics.cost_efficiency %}
-                
-                {% if composite is not none %}
-                    {% set color = '#28a745' if composite > 0 else ('#dc3545' if composite < 0 else '#6c757d') %}
-                {% else %}
-                    {% set color = '#6c757d' %} {# Default color for unavailable data #}
-                {% endif %}
 
-                <div class="efficiency-container" style="background-color: {{ color }};">
+            {% if composite_score is not none or time_efficiency is not none or cost_efficiency is not none %}
+                <div class="efficiency-container {{ display_class }}">
                     📊 Composite Efficiency (Weighted Score): 
                     <strong>
-                        {{ (composite | round(2)) if composite is not none else 'N/A' }}%
+                        {{ (composite_score | round(2)) if composite_score is not none else 'N/A' }}%
                     </strong>
                     
-                    <span class="efficiency-metric time-metric">Time Efficiency: {{ (time_eff | round(2)) if time_eff is not none else 'N/A' }}%</span>
-                    <span class="efficiency-metric cost-metric">Cost Efficiency: {{ (cost_eff | round(2)) if cost_eff is not none else 'N/A' }}%</span>
+                    <span class="efficiency-metric time-metric">Time Efficiency: {{ (time_efficiency | round(2)) if time_efficiency is not none else 'N/A' }}%</span>
+                    <span class="efficiency-metric cost-metric">Cost Efficiency: {{ (cost_efficiency | round(2)) if cost_efficiency is not none else 'N/A' }}%</span>
                 </div>
             {% endif %}
 
@@ -143,37 +372,33 @@
                     <pre>{{ original.query }}</pre>
                     <p><strong>Total Time:</strong> {{ original.total_time_ms | round(3) }} ms</p>
                     <p><strong>Planner Cost:</strong> {{ original.planner_cost | round(2) }}</p>
-                    {% if original.error %} <p class="error">Error: {{ original.error }}</p> {% endif %}
+                    {% if original.get('error') %} <p class="error">Error: {{ original.get('error') }}</p> {% endif %}
                 </div>
                 <div class="col-md-6">
                     <h3>Optimized Query:</h3>
-                    <pre>{{ optimized.query.split('--')[0].strip() }}</pre>
+                    <pre>{{ optimized.get('query_base', optimized.query) }}</pre>
                     <p><strong>Total Time:</strong> {{ optimized.total_time_ms | round(3) }} ms</p>
                     <p><strong>Planner Cost:</strong> {{ optimized.planner_cost | round(2) }}</p>
-                    {% if optimized.error %} <p class="error">Error: {{ optimized.error }}</p> {% endif %}
+                    {% if optimized.get('error') %} <p class="error">Error: {{ optimized.get('error') }}</p> {% endif %}
 
-                    {% set hints_list = optimized.query.split('--')[1:] %}
-                    {% if hints_list %}
+                    {% if optimized.get('hints_list') %}
                         <h4 class="mt-3">💡 Optimization Hints:</h4>
-                        <ul class="hints">
-                            {% for hint in hints_list %}
-                                <li>{{ hint.strip() }}</li>
-                            {% endfor %}
-                        </ul>
+                        <div class="hints">{% for hint in optimized.get('hints_list') %}<div class="hint-item">{{ hint }}</div>{% endfor %}</div>
                     {% endif %}
                 </div>
             </div>
 
             <hr>
-            <h4>Execution Plan Comparison:</h4>
+            <section class="execution-plan">
+                <h4>📊 Execution Plan Comparison</h4>
 
-            <div class="row">
-                <div class="col-md-6">
-                    <h5>Plan A Details:</h5>
-                    {% if original.plan %}
-                        <div class="table-responsive">
-                            <table>
-                            <thead>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>💠 Original Plan (Plan A)</h5>
+                        {% if original.plan %}
+                            <div class="table-responsive">
+                                <table>
+                                <thead>
                                 <tr>
                                     <th>Step</th>
                                     <th>Cost</th>
@@ -186,7 +411,7 @@
                             <tbody>
                                 {% for row in original.plan %}
                                 <tr>
-                                    <td style="padding-left: {{ 12 + row.get('Indent', 0) * 25 }}px;">{{ row.get('Step', 'N/A') }}</td>
+                                    <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
                                     <td>{{ row.get('Cost', '') }}</td>
                                     <td>{{ row.get('Est. Rows', '') }}</td>
                                     <td>{{ row.get('Actual Time', '') }}</td>
@@ -202,7 +427,7 @@
                     {% endif %}
                 </div>
                 <div class="col-md-6">
-                    <h5>Plan B Details:</h5>
+                    <h5>💫 Optimized Plan (Plan B)</h5>
                     {% if optimized.plan %}
                         <div class="table-responsive">
                             <table>
@@ -219,7 +444,7 @@
                             <tbody>
                                 {% for row in optimized.plan %}
                                 <tr>
-                                    <td style="padding-left: {{ 12 + row.get('Indent', 0) * 25 }}px;">{{ row.get('Step', 'N/A') }}</td>
+                                    <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
                                     <td>{{ row.get('Cost', '') }}</td>
                                     <td>{{ row.get('Est. Rows', '') }}</td>
                                     <td>{{ row.get('Actual Time', '') }}</td>
