@@ -327,6 +327,63 @@
         .indent-9 { padding-left: 237px; }
         .indent-10 { padding-left: 262px; }
 
+        /* --- MODAL STYLES --- */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 2000; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            overflow: auto; 
+            background-color: rgba(0,0,0,0.8); 
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background-color: var(--bg-darker);
+            margin: 10% auto; 
+            padding: 2rem;
+            border: 1px solid var(--accent-primary);
+            width: 50%; 
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px;
+            background: var(--table-row-odd);
+            border-radius: 4px;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .btn-cancel {
+            background-color: #CF6679;
+            color: white;
+        }
+        .btn-cancel:hover {
+             background-color: #B00020;
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .nav-container {
@@ -343,6 +400,7 @@
             .row {
                 grid-template-columns: 1fr;
             }
+             .modal-content { width: 90%; }
         }
     </style>
 </head>
@@ -357,11 +415,9 @@
         </div>
     </nav>
         
-    
-
-        
-        <form method="post" action="/run_query">
-            <textarea name="query" placeholder="Enter your SQL query here...">{{ request.form.get('query', '') }}</textarea>
+    <div class="container">
+        <form id="queryForm" method="post" action="/run_query">
+            <textarea id="sqlInput" name="query" placeholder="Enter your SQL query here...">{{ request.form.get('query', '') }}</textarea>
             <br><br>
             <button type="submit">Analyze and Optimize</button>
         </form>
@@ -476,5 +532,135 @@
             </div>
         {% endif %}
     </div>
+
+    <div id="columnModal" class="modal">
+        <div class="modal-content">
+            <h3>Select Specific Columns</h3>
+            <p>Uncheck columns you don't need to improve performance.</p>
+            <div id="columnsContainer" class="checkbox-grid">
+                </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
+                <button type="button" onclick="submitSelectedColumns()">Optimize with Selected</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('queryForm');
+        const modal = document.getElementById('columnModal');
+        const columnsContainer = document.getElementById('columnsContainer');
+
+        form.addEventListener('submit', function(e) {
+            // If we already handled the check, let it submit naturally
+            if (form.dataset.confirmed === "true") return;
+
+            const query = document.getElementById('sqlInput').value;
+            
+            // 1. Check for SELECT *
+            if (/select\s+\*/i.test(query)) {
+                e.preventDefault(); // Stop submission
+                
+                // 2. Ask the user
+                const userWantsAll = confirm("Warning: 'SELECT *' detected.\n\nDo you want all columns? This can reduce execution speed.\n\n[OK] = Yes, keep all columns.\n[Cancel] = No, I want to select specific columns.");
+
+                if (userWantsAll) {
+                    // User wants regular behavior
+                    form.dataset.confirmed = "true";
+                    form.submit();
+                } else {
+                    // User wants to pick columns
+                    fetchColumnsAndShowModal(query);
+                }
+            }
+        });
+
+        function fetchColumnsAndShowModal(query) {
+            // Extract table name using Regex
+            const match = query.match(/from\s+([`'"]?[\w]+[`'"]?)/i);
+            
+            if (!match || !match[1]) {
+                alert("Could not detect table name. Running query as is.");
+                form.dataset.confirmed = "true";
+                form.submit();
+                return;
+            }
+
+            const tableName = match[1].replace(/[`'"]/g, ''); // Clean quotes
+
+            // Call Backend API to get columns
+            fetch('/get_table_columns', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ table: tableName, db: 'testdb' }) 
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    populateModal(data.columns);
+                    modal.style.display = "block";
+                } else {
+                    alert("Error fetching columns: " + data.error);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Network error fetching columns.");
+            });
+        }
+
+        function populateModal(columns) {
+            columnsContainer.innerHTML = '';
+            columns.forEach(col => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'checkbox-item';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'col-check';
+                checkbox.value = col;
+                checkbox.checked = true; // Default to checked
+                
+                const label = document.createElement('label');
+                label.textContent = col;
+                
+                wrapper.appendChild(checkbox);
+                wrapper.appendChild(label);
+                columnsContainer.appendChild(wrapper);
+            });
+        }
+
+        function closeModal() {
+            modal.style.display = "none";
+        }
+
+        function submitSelectedColumns() {
+            const checkboxes = document.querySelectorAll('.col-check:checked');
+            
+            if (checkboxes.length === 0) {
+                alert("Please select at least one column.");
+                return;
+            }
+
+            // Add selected columns as hidden inputs to the form
+            checkboxes.forEach(cb => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'columns'; // Matches request.form.getlist('columns') in Python
+                input.value = cb.value;
+                form.appendChild(input);
+            });
+
+            form.dataset.confirmed = "true";
+            form.submit();
+        }
+
+        // Close modal if user clicks outside content
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
 </body>
 </html>

@@ -8,11 +8,11 @@ import datetime
 app = Flask(__name__)
 
 
-# --- STATIC DB CONFIGURATIONS (MUST BE UPDATED) ---
+# --- STATIC DB CONFIGURATIONS ---
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'aditya', 
+    'password': 'aditya39', 
     'database': 'testdb',
     'port': 3306,
     'cursorclass': pymysql.cursors.Cursor
@@ -20,8 +20,8 @@ db_config = {
 db1_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'aditya', 
-    'database': 'testdb',
+    'password': 'aditya39', 
+    'database': 'testdb_copy',
     'port': 3306,
     'cursorclass': pymysql.cursors.Cursor
 }
@@ -39,12 +39,7 @@ COST_WEIGHT = 0.4
 
 
 def optimize_sql(query, conn):
-    """
-    Apply rule-based optimizations to SQL query.
-    Rewrites when safe, otherwise appends suggestions.
-    """
-
-
+   
     optimized_query = query.strip()
     hints = [] 
     total_rows = 0 
@@ -53,7 +48,10 @@ def optimize_sql(query, conn):
     # -----------------------------------
     # Rule 1: SELECT * → expand explicit columns
     # -----------------------------------
+    # NOTE: If the user selected columns via Modal, the '*' is already gone
+    # so this rule won't fire, which is correct.
     if re.search(r"select\s+\*", optimized_query, re.IGNORECASE):
+        
         try:
             match = re.search(r"from\s+([a-zA-Z0-9_]+)", optimized_query, re.IGNORECASE)
             if match:
@@ -218,8 +216,12 @@ def optimize_sql(query, conn):
     # -----------------------------------
     # Rule 5: DISTINCT + GROUP BY redundancy
     # -----------------------------------
-    if re.search(r"distinct", optimized_query, re.IGNORECASE) and re.search(r"group\s+by", optimized_query, re.IGNORECASE):
-        hints.append("DISTINCT + GROUP BY both detected – you may not need both.")
+    if re.search(r"\bDISTINCT\b", optimized_query, re.IGNORECASE) and re.search(r"\bGROUP\s+BY\b", optimized_query, re.IGNORECASE):
+        if not re.search(r"COUNT\s*\(\s*DISTINCT", optimized_query, re.IGNORECASE):
+             optimized_query = re.sub(r"\bDISTINCT\b\s*", "", optimized_query, count=1, flags=re.IGNORECASE)
+             hints.append("Removed redundant DISTINCT when GROUP BY is present (and no COUNT(DISTINCT)).")
+        else:
+            hints.append("DISTINCT is used within COUNT(DISTINCT) and GROUP BY, which is allowed.")
 
 
     # -----------------------------------
@@ -356,12 +358,7 @@ def optimize_sql(query, conn):
 # 2. ANALYSIS AND METRICS
 # -----------------------------
 def analyze_query(query, db_conf):
-    """
-    Analyze SQL query execution using EXPLAIN ANALYZE.
-    Returns (plan_data, total_time_ms, planner_cost).
-    Handles UNION queries safely by wrapping them in a subquery.
-    """
-
+   
     custom_db_conf = db_conf.copy()
     custom_db_conf['cursorclass'] = pymysql.cursors.SSCursor
 
@@ -390,17 +387,14 @@ def analyze_query(query, db_conf):
                 continue
             line = row_tuple[0]
 
-            # Indentation (tree structure)
             indent_match = re.match(r"^(\s*)", line)
             indent = len(indent_match.group(1)) // 4 if indent_match else 0
 
-            # Step, estimated cost and rows
             step_cost_match = re.search(
                 r"->\s*(.*?)\s+\(cost=([\d\.]+)\s+rows=([\d\.]+)\)",
                 line
             )
 
-            # Actual times, actual rows, loops
             actuals_match = re.search(
                 r"\(actual time=([\d\.]+)\.\.([\d\.]+)\s+rows=([\d\.]+)\s+loops=([\d\.]+)\)",
                 line
@@ -410,7 +404,6 @@ def analyze_query(query, db_conf):
             cost_str = step_cost_match.group(2) if step_cost_match else "0"
             est_rows = step_cost_match.group(3) if step_cost_match else "0"
 
-            # Convert actual times safely to floats
             if actuals_match:
                 try:
                     actual_time_start_f = float(actuals_match.group(1))
@@ -422,10 +415,8 @@ def analyze_query(query, db_conf):
             else:
                 actual_time_start_f = actual_time_end_f = actual_rows_f = loops_f = 0.0
 
-            # Combined string for display
             actual_time_str = f"{actual_time_start_f}..{actual_time_end_f}" if actuals_match else ""
 
-            # Capture root total time and planner cost
             if indent == 0 and actual_time_end_f and total_time == 0.0:
                 total_time = actual_time_end_f
             if indent == 0 and cost_str and planner_cost == 0.0:
@@ -434,7 +425,6 @@ def analyze_query(query, db_conf):
                 except ValueError:
                     planner_cost = 0.0
 
-            # Append row to plan_data
             plan_data.append({
                 "Indent": indent,
                 "Step": step,
@@ -443,7 +433,6 @@ def analyze_query(query, db_conf):
                 "Actual Time": actual_time_str,
                 "Actual Rows": str(int(actual_rows_f)),
                 "Loops": str(int(loops_f)),
-                # Precompute padding for display (avoid template math)
                 "PaddingLeftPx": 12 + (indent * 25),
             })
 
@@ -454,7 +443,6 @@ def analyze_query(query, db_conf):
         return plan_data, total_time, planner_cost
 
     except Exception as e:
-        # Return diagnostic row instead of silent failure
         return (
             [{"Step": f"EXPLAIN ANALYZE failed: {str(e)}", "PaddingLeftPx": 12}],
             0.0,
@@ -517,10 +505,37 @@ def schema():
     return render_template('schema.html')
 
 
+@app.route('/get_table_columns', methods=['POST'])
+def get_table_columns():
+    """Fetch column names from a specific table. Added for Modal functionality."""
+    try:
+        data = request.json
+        table_name = data.get('table')
+        # Use db_config (testdb) by default
+        config = db_config 
+        
+        conn = pymysql.connect(**config)
+        cursor = conn.cursor()
+        
+        query = f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s"
+        cursor.execute(query, (config['database'], table_name))
+        columns = [row[0] for row in cursor.fetchall()]
+        
+        cursor.close()
+        conn.close()
+        
+        return {'success': True, 'columns': columns}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}, 400
+
+
 @app.route('/run_query', methods=['POST'])
 def run_query():
-    user_query = request.form['query'].strip()
-
+    # 1. Get the raw user query (containing SELECT *)
+    user_query = request.form.get('query', '').strip()
+    selected_columns = request.form.getlist('columns')
+    
+    # 2. Analyze the ORIGINAL query exactly as written (with SELECT *)
     original_plan, original_time, original_cost = analyze_query(user_query, db_config)
     original_data = {
         'query': user_query, 'plan': original_plan, 
@@ -528,10 +543,19 @@ def run_query():
     }
 
     conn = None
-    optimized_sql = user_query 
+    
+    # 3. Prepare the query strictly for the OPTIMIZER
+    query_to_optimize = user_query
+
+    # If user picked columns, we replace * -> col1, col2 ONLY in the optimization path
+    if selected_columns:
+        columns_str = ', '.join(selected_columns)
+        query_to_optimize = re.sub(r'SELECT\s+\*', f'SELECT {columns_str}', user_query, flags=re.IGNORECASE)
+
+    optimized_sql = query_to_optimize 
     try:
         conn = pymysql.connect(**db1_config)
-        optimized_sql = optimize_sql(user_query, conn)
+        optimized_sql = optimize_sql(query_to_optimize, conn)
     except Exception as e:
         optimized_sql += f"\n-- Optimization setup failed: {str(e)}"
     finally:
@@ -545,8 +569,6 @@ def run_query():
         'total_time_ms': optimized_time, 'planner_cost': optimized_cost
     }
 
-    # Precompute values that are more reliable/safe to access from the template
-    # Split out base optimized query and any appended hints (lines starting with --)
     hints_raw = optimized_sql.split('--')[1:]
     hints_list = [h.strip() for h in hints_raw if h and h.strip()]
     optimized_data['query_base'] = optimized_query_base
@@ -573,7 +595,7 @@ def run_query():
         composite_score=composite_score,
         time_efficiency=time_efficiency,
         cost_efficiency=cost_efficiency,
-    display_class=display_class,
+        display_class=display_class,
         db_config=db_config,
         db1_config=db1_config
     )
