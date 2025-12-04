@@ -301,17 +301,16 @@
             color: var(--text-primary);
         }
 
-        /* NEW: enforce wrapping for the Step column when it grows > 40% */
         .explain-table {
-            table-layout: auto; /* allow other columns to size normally */
+            table-layout: auto; 
             width: 100%;
         }
         .explain-table th:first-child,
         .explain-table td:first-child {
             width: 40%;
             max-width: 40%;
-            white-space: normal;       /* allow wrapping */
-            overflow-wrap: anywhere;   /* break long tokens if needed */
+            white-space: normal;      
+            overflow-wrap: anywhere;  
             word-break: break-word;
         }
 
@@ -384,6 +383,28 @@
              background-color: #B00020;
         }
 
+        /* --- NEW: Index Badge Styles --- */
+        .index-badge {
+            display: inline-block;
+            background-color: #9C27B0; /* Purple color for Index */
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            font-weight: bold;
+            border: 1px solid #7B1FA2;
+        }
+
+        .index-section {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: rgba(156, 39, 176, 0.1); /* Light purple bg */
+            border-radius: 6px;
+            border-left: 3px solid #9C27B0;
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .nav-container {
@@ -449,6 +470,22 @@
                     <pre>{{ optimized.get('query_base', optimized.query) }}</pre>
                     <p><strong>Total Time:</strong> {{ optimized.total_time_ms | round(3) }} ms</p>
                     <p><strong>Planner Cost:</strong> {{ optimized.planner_cost | round(2) }}</p>
+                    
+                    {% if optimized.indexes %}
+                        <div class="index-section">
+                            <span style="color: #E1BEE7; font-size: 0.9rem;">🔑 Indexes Used:</span><br>
+                            <div style="margin-top: 5px;">
+                                {% for idx in optimized.indexes %}
+                                    <span class="index-badge">{{ idx }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="index-section" style="border-color: #555; background-color: rgba(255,255,255,0.05);">
+                            <span style="color: #aaa; font-size: 0.9rem;">🚫 No specific index usage detected.</span>
+                        </div>
+                    {% endif %}
+                    
                     {% if optimized.get('error') %} <p class="error">Error: {{ optimized.get('error') }}</p> {% endif %}
 
                     {% if optimized.get('hints_list') %}
@@ -477,31 +514,31 @@
                                     <th>Actual Rows</th>
                                     <th>Loops</th>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in original.plan %}
-                                <tr>
-                                    <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
-                                    <td>{{ row.get('Cost', '') }}</td>
-                                    <td>{{ row.get('Est. Rows', '') }}</td>
-                                    <td>{{ row.get('Actual Time', '') }}</td>
-                                    <td>{{ row.get('Actual Rows', '') }}</td>
-                                    <td>{{ row.get('Loops', '') }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                            </table>
-                        </div>
-                    {% else %}
-                         <p>No plan data available for Query A.</p>
-                    {% endif %}
-                </div>
-                <div class="col-md-6">
-                    <h5>💫 Optimized Plan (Plan B)</h5>
-                    {% if optimized.plan %}
-                        <div class="table-responsive">
-                            <table class="explain-table">
-                            <thead>
+                                </thead>
+                                <tbody>
+                                    {% for row in original.plan %}
+                                    <tr>
+                                        <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
+                                        <td>{{ row.get('Cost', '') }}</td>
+                                        <td>{{ row.get('Est. Rows', '') }}</td>
+                                        <td>{{ row.get('Actual Time', '') }}</td>
+                                        <td>{{ row.get('Actual Rows', '') }}</td>
+                                        <td>{{ row.get('Loops', '') }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                             <p>No plan data available for Query A.</p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <h5>💫 Optimized Plan (Plan B)</h5>
+                        {% if optimized.plan %}
+                            <div class="table-responsive">
+                                <table class="explain-table">
+                                <thead>
                                 <tr>
                                     <th>Step</th>
                                     <th>Cost</th>
@@ -510,24 +547,25 @@
                                     <th>Actual Rows</th>
                                     <th>Loops</th>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in optimized.plan %}
-                                <tr>
-                                    <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
-                                    <td>{{ row.get('Cost', '') }}</td>
-                                    <td>{{ row.get('Est. Rows', '') }}</td>
-                                    <td>{{ row.get('Actual Time', '') }}</td>
-                                    <td>{{ row.get('Actual Rows', '') }}</td>
-                                    <td>{{ row.get('Loops', '') }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                            </table>
-                        </div>
-                    {% else %}
-                        <p>No plan data available for Query B.</p>
-                    {% endif %}
+                                </thead>
+                                <tbody>
+                                    {% for row in optimized.plan %}
+                                    <tr>
+                                        <td class="plan-step indent-{{ row.get('Indent', 0) }}">{{ row.get('Step', 'N/A') }}</td>
+                                        <td>{{ row.get('Cost', '') }}</td>
+                                        <td>{{ row.get('Est. Rows', '') }}</td>
+                                        <td>{{ row.get('Actual Time', '') }}</td>
+                                        <td>{{ row.get('Actual Rows', '') }}</td>
+                                        <td>{{ row.get('Loops', '') }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p>No plan data available for Query B.</p>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         {% endif %}

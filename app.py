@@ -4,9 +4,7 @@ import calendar
 import re
 import datetime
 
-
 app = Flask(__name__)
-
 
 # --- STATIC DB CONFIGURATIONS ---
 db_config = {
@@ -27,16 +25,13 @@ db1_config = {
 }
 # --- END STATIC CONFIGURATIONS ---
 
-
 # Default weights for the composite efficiency score
 TIME_WEIGHT = 0.6
 COST_WEIGHT = 0.4
 
-
 # -----------------------------
 # 1. RULE ENGINE
 # -----------------------------
-
 
 def optimize_sql(query, conn):
    
@@ -44,14 +39,10 @@ def optimize_sql(query, conn):
     hints = [] 
     total_rows = 0 
 
-
     # -----------------------------------
     # Rule 1: SELECT * → expand explicit columns
     # -----------------------------------
-    # NOTE: If the user selected columns via Modal, the '*' is already gone
-    # so this rule won't fire, which is correct.
     if re.search(r"select\s+\*", optimized_query, re.IGNORECASE):
-        
         try:
             match = re.search(r"from\s+([a-zA-Z0-9_]+)", optimized_query, re.IGNORECASE)
             if match:
@@ -69,11 +60,9 @@ def optimize_sql(query, conn):
         except Exception:
             hints.append("SELECT * detected – explicitly list only required columns for performance.")
 
-
-# -----------------------------------
-# Rule 2: YEAR() / MONTH() → BETWEEN 
-# -----------------------------------
-
+    # -----------------------------------
+    # Rule 2: YEAR() / MONTH() → BETWEEN 
+    # -----------------------------------
     year_month_match = re.findall(
         r"(YEAR|MONTH)\s*\(\s*(\w+)\s*\)\s*=\s*(\d{1,4})",
         optimized_query,
@@ -118,17 +107,12 @@ def optimize_sql(query, conn):
 
             elif col in column_months and col not in column_years:
                 month = column_months[col]
-                year = datetime.date.today().year
-                last_day = calendar.monthrange(year, month)[1]
-                optimized_query = query
                 hints.append(f"Rewrite MONTH({col}) = {month} to BETWEEN  for index usage .")
 
 
     # -----------------------------------
     # Rule 3: IN (subquery) → EXISTS rewrite
     # -----------------------------------
-
-    
     in_clause_regex = r"""
         (?:([\w\.]+)\.)?              
         (\w+)\s+IN\s*\(              
@@ -143,9 +127,7 @@ def optimize_sql(query, conn):
 
     if in_match:
         outer_alias, outer_col, inner_col, inner_table, alias, where_contents = in_match.groups()
-
         subquery_alias = alias or inner_table
-
         outer_column_ref = f"{outer_alias}.{outer_col}" if outer_alias else outer_col
 
         if not outer_alias:
@@ -168,7 +150,6 @@ def optimize_sql(query, conn):
                 pass
 
         inner_col_name = inner_col.split('.')[-1]
-
         join_condition = f"{subquery_alias}.{inner_col_name} = {outer_column_ref}"
 
         if where_contents and where_contents.strip():
@@ -181,11 +162,7 @@ def optimize_sql(query, conn):
 
         full_match_text = in_match.group(0)
         optimized_query = optimized_query.replace(full_match_text, exists_clause, 1)
-
         hints.append("Rewrote IN (subquery) as EXISTS for improved performance.")
-
-
-
 
     # -----------------------------------
     # Rule 4: OR conditions → UNION suggestion
@@ -201,17 +178,12 @@ def optimize_sql(query, conn):
 
         if re.search(r"\s+or\s+", where_conditions, re.IGNORECASE) and not re.search(r"\bAND\b|\(|\)", where_conditions, re.IGNORECASE):
             conditions = re.split(r"\s+or\s+", where_conditions, flags=re.IGNORECASE)
-
             union_parts = [f"{select_clause}{cond.strip()}" for cond in conditions]
             optimized_query = " UNION ALL ".join(union_parts)
-
             optimized_query = optimized_query.strip()
             if not optimized_query.endswith(";"):
                 optimized_query += ";"
-
             hints.append("Rewrote OR conditions as UNION ALL for better index utilization.")
-
-
 
     # -----------------------------------
     # Rule 5: DISTINCT + GROUP BY redundancy
@@ -222,7 +194,6 @@ def optimize_sql(query, conn):
              hints.append("Removed redundant DISTINCT when GROUP BY is present (and no COUNT(DISTINCT)).")
         else:
             hints.append("DISTINCT is used within COUNT(DISTINCT) and GROUP BY, which is allowed.")
-
 
     # -----------------------------------
     # Rule 6: ORDER BY without LIMIT
@@ -238,16 +209,13 @@ def optimize_sql(query, conn):
                 with conn.cursor() as cursor:
                     cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
                     total_rows = cursor.fetchone()[0]
-                
             except Exception:
                 total_rows = 1000 
         else:
             total_rows = 1000 
 
-
         optimized_query = optimized_query.strip().rstrip(";") + f" LIMIT {total_rows};"
         hints.append(f"Applied dynamic LIMIT of {total_rows} to optimize sorting.")
-
 
     # -----------------------------------
     # Rule 7: LIKE with leading wildcard
@@ -255,96 +223,105 @@ def optimize_sql(query, conn):
     if re.search(r"like\s+'%[^']*'", optimized_query, re.IGNORECASE):
         hints.append("LIKE with leading wildcard ('%value') detected – index cannot be used efficiently.")
 
-
     # -----------------------------------
     # Rule 8: Non-Sargable Function Rewrites 
     # -----------------------------------
 
-    substr_pattern = r"SUBSTR\(\s*([\w\.]+)\s*,\s*(\d+)\s*,\s*(\d+)\)\s*=\s*'([^']+)'"
+    substr_pattern = r"SUBSTR\s*\(\s*([\w\.]+)\s*,\s*(\d+)\s*,\s*(\d+)\)\s*=\s*'([^']+)'"
     def _substr_to_like(m):
         col_name = m.group(1)
         start_pos = int(m.group(2))
+        length = int(m.group(3))
         literal = m.group(4)
+        
+        if length != len(literal):
+             return m.group(0) 
+
         if start_pos <= 1:
             return f"{col_name} LIKE '{literal}%'"
         else:
             return f"{col_name} LIKE '{'_'*(start_pos-1)}{literal}%'"
+        
     new_query, subs = re.subn(substr_pattern, _substr_to_like, optimized_query, flags=re.IGNORECASE)
     if subs:
         optimized_query = new_query
-        hints.append("Rewrote SUBSTR(...) = '...' to LIKE when safe (uses '_' for fixed offset).")
+        hints.append(f"Rewrote {subs} SUBSTR(...) = '...' expression(s) to LIKE for index usage.")
 
-    func_match = re.search(
-        r"(LOWER|UPPER|SUBSTR|ROUND|INSTR)\s*\(\s*([\w\.]+)(?:\s*,\s*'([^']+)')?(?:\s*,\s*(\d+))?\)",
-        optimized_query,
-        re.IGNORECASE,
-    )
 
-    if func_match:
-        func, col, str_val, arg_num = func_match.groups()
-        func = func.upper()
-        col = col.strip()
+    # 8b: LEFT/RIGHT/LOWER/UPPER(col) = 'literal' -> Sargable forms
+    def _string_func_rewrite(func_name, col, literal, arg_num=None):
+        func_name = func_name.upper()
+        if func_name == "LOWER":
+            return f"{col} = '{literal.lower()}'"
+        elif func_name == "UPPER":
+            return f"{col} = '{literal.upper()}'"
+        elif func_name == "LEFT" and arg_num is not None:
+            # LEFT(col, 5) = 'hello' -> col LIKE 'hello%' (assuming length matches literal)
+            if len(literal) == int(arg_num):
+                 return f"{col} LIKE '{literal}%'"
+        elif func_name == "RIGHT" and arg_num is not None:
+            # RIGHT(col, 5) = 'world' -> col LIKE '%world'
+            if len(literal) == int(arg_num):
+                # Note: RIGHT rewrite only helps if you have a reverse index, but it's technically Sargable
+                 return f"{col} LIKE '%{literal}'"
+        return None # Return None if not rewritten or length mismatch
 
-        if func == "LOWER":
-            optimized_query = re.sub(
-                rf"{func}\(\s*{col}\s*\)\s*=\s*'([^']+)'",
-                lambda m: f"{col} = LOWER('{m.group(1)}')",
-                optimized_query,
-                flags=re.IGNORECASE,
-            )
-            hints.append(f"Rewrote LOWER({col}) for index usage.")
+    
+    # Combined pattern for functions with 1 arg (LOWER/UPPER) or 2 args (LEFT/RIGHT)
+    string_func_pattern = r"(LOWER|UPPER|LEFT|RIGHT)\s*\(\s*([\w\.]+)\s*(?:,\s*(\d+))?\s*\)\s*=\s*'([^']+)'"
+    
+    def _replace_string_func(m):
+        func = m.group(1)
+        col = m.group(2)
+        arg = m.group(3)
+        literal = m.group(4)
+        
+        rewritten_clause = _string_func_rewrite(func, col, literal, arg)
+        
+        if rewritten_clause:
+            hints.append(f"Rewrote {func.upper()}({col}) for index usage.")
+            return rewritten_clause
+        else:
+            return m.group(0) # Keep original if not successfully rewritten
 
-        elif func == "UPPER":
-            optimized_query = re.sub(
-                rf"{func}\(\s*{col}\s*\)\s*=\s*'([^']+)'",
-                lambda m: f"{col} = UPPER('{m.group(1)}')",
-                optimized_query,
-                flags=re.IGNORECASE,
-            )
-            hints.append(f"Rewrote UPPER({col}) for index usage.")
+    new_query, subs_string = re.subn(string_func_pattern, _replace_string_func, optimized_query, flags=re.IGNORECASE)
+    optimized_query = new_query
+    
+    # 8c: ROUND(col) = N -> col BETWEEN N-0.5 AND N+0.5
+    round_pattern = r"ROUND\s*\(\s*([\w\.]+)\s*\)\s*=\s*(\d+)"
+    def _round_to_between(m):
+        col = m.group(1)
+        num = int(m.group(2))
+        return f"{col} BETWEEN {num - 0.5} AND {num + 0.5}"
+        
+    new_query, subs_round = re.subn(round_pattern, _round_to_between, optimized_query, flags=re.IGNORECASE)
+    if subs_round:
+        optimized_query = new_query
+        hints.append(f"Rewrote {subs_round} ROUND(...) expression(s) to BETWEEN for index usage.")
 
-      
-        elif func == "SUBSTR":
-            optimized_query = re.sub(
-                rf"{func}\(\s*{col}\s*,\s*(\d+)\s*,\s*(\d+)\)\s*=\s*'([^']+)'",
-                lambda m:  f"{col} LIKE '{m.group(3)}%'" ,         
-                optimized_query,
-                flags=re.IGNORECASE,
-            )
-            hints.append(f"Rewrote SUBSTR({col},start,len) for index usage.")
 
-        elif func == "ROUND":
-            optimized_query = re.sub(
-                rf"ROUND\(\s*{col}\s*\)\s*=\s*(\d+)",
-                lambda m: f"{col} BETWEEN {int(m.group(1))-0.5} AND {int(m.group(1))+0.5}",
-                optimized_query,
-                flags=re.IGNORECASE,
-            )
-            hints.append(f"Rewrote ROUND({col}) for index usage.")
-
-        elif func == "INSTR":
-            # INSTR(col,'str') > 0 → col LIKE '%str%'
-            optimized_query = re.sub(
-                rf"INSTR\(\s*{col}\s*,\s*'([^']+)'\s*\)\s*>\s*0",
-                lambda m: f"{col} LIKE '%{m.group(1)}%'",
-                optimized_query,
-                flags=re.IGNORECASE,
-            )
-            hints.append(f"Rewrote INSTR({col},'{str_val}') > 0 → {col} LIKE '%{str_val}%' for index usage.")
-
+    # 8d: INSTR(col, 'str') > 0 → col LIKE '%str%' (Still not ideal for index, but better expression)
+    instr_pattern = r"INSTR\s*\(\s*([\w\.]+)\s*,\s*'([^']+)'\s*\)\s*>\s*0"
+    def _instr_to_like(m):
+        col = m.group(1)
+        literal = m.group(2)
+        return f"{col} LIKE '%{literal}%'"
+        
+    new_query, subs_instr = re.subn(instr_pattern, _instr_to_like, optimized_query, flags=re.IGNORECASE)
+    if subs_instr:
+        optimized_query = new_query
+        hints.append(f"Rewrote {subs_instr} INSTR(...) > 0 expression(s) to LIKE '%...%' (note: still not index-friendly).")
     # -----------------------------------
     # Rule 9: COUNT(*) misuse
     # -----------------------------------
     if re.search(r"count\s*\(\s*\*\s*\)", optimized_query, re.IGNORECASE) and "group by" not in optimized_query.lower():
         hints.append("COUNT(*) used – if only checking existence, use EXISTS instead for efficiency.")
 
-
     # -----------------------------------
     # Rule 10: Cartesian product risk
     # -----------------------------------
     if "join" in optimized_query.lower() and "on" not in optimized_query.lower():
         hints.append("JOIN without ON clause – possible Cartesian product, check if intended.")
-
 
     # -----------------------------------
     # Attach hints as comments if any
@@ -358,13 +335,13 @@ def optimize_sql(query, conn):
 # 2. ANALYSIS AND METRICS
 # -----------------------------
 def analyze_query(query, db_conf):
-   
     custom_db_conf = db_conf.copy()
     custom_db_conf['cursorclass'] = pymysql.cursors.SSCursor
 
     connection = None
     cursor = None
     plan_data = []
+    indexes_used = set() # NEW: Set to store unique indexes found
     total_time = 0.0
     planner_cost = 0.0
 
@@ -375,7 +352,6 @@ def analyze_query(query, db_conf):
         # --- Clean and prepare query ---
         query = query.strip().rstrip(";")
 
-      
         # Add EXPLAIN ANALYZE
         explain_query = "EXPLAIN ANALYZE " + query
         cursor.execute(explain_query)
@@ -386,6 +362,15 @@ def analyze_query(query, db_conf):
             if not row_tuple or not row_tuple[0]:
                 continue
             line = row_tuple[0]
+
+            # --- NEW: Extract Index Usage ---
+            idx_match = re.search(r"using\s+(?:index\s+)?[`]?([a-zA-Z0-9_$]+)[`]?", line, re.IGNORECASE)
+            if idx_match:
+                found_idx = idx_match.group(1)
+                ignored_keywords = ['where', 'filesort', 'temporary', 'join', 'mrr', 'priority', 'union']
+                if found_idx.lower() not in ignored_keywords:
+                    indexes_used.add(found_idx)
+            # --------------------------------
 
             indent_match = re.match(r"^(\s*)", line)
             indent = len(indent_match.group(1)) // 4 if indent_match else 0
@@ -436,17 +421,17 @@ def analyze_query(query, db_conf):
                 "PaddingLeftPx": 12 + (indent * 25),
             })
 
-        # --- Fallback if EXPLAIN returns no lines ---
         if not plan_data:
             plan_data = [{"Step": "No plan returned. Query executed successfully but EXPLAIN output was empty (possibly UNION or complex query).", "PaddingLeftPx": 12}]
 
-        return plan_data, total_time, planner_cost
+        return plan_data, total_time, planner_cost, list(indexes_used)
 
     except Exception as e:
         return (
             [{"Step": f"EXPLAIN ANALYZE failed: {str(e)}", "PaddingLeftPx": 12}],
             0.0,
             0.0,
+            []
         )
 
     finally:
@@ -454,8 +439,6 @@ def analyze_query(query, db_conf):
             cursor.close()
         if connection:
             connection.close()
-
-
 
 
 def calculate_efficiency_metrics(original, optimized):
@@ -488,8 +471,6 @@ def calculate_efficiency_metrics(original, optimized):
             (metrics['cost_efficiency'] * COST_WEIGHT)
         )
     
-
-         
     return metrics
 
 
@@ -536,10 +517,11 @@ def run_query():
     selected_columns = request.form.getlist('columns')
     
     # 2. Analyze the ORIGINAL query exactly as written (with SELECT *)
-    original_plan, original_time, original_cost = analyze_query(user_query, db_config)
+    original_plan, original_time, original_cost, original_indexes = analyze_query(user_query, db_config)
     original_data = {
         'query': user_query, 'plan': original_plan, 
-        'total_time_ms': original_time, 'planner_cost': original_cost
+        'total_time_ms': original_time, 'planner_cost': original_cost,
+        'indexes': original_indexes
     }
 
     conn = None
@@ -562,11 +544,12 @@ def run_query():
         if conn: conn.close()
     
     optimized_query_base = optimized_sql.split('--')[0].strip()
-    optimized_plan, optimized_time, optimized_cost = analyze_query(optimized_query_base, db1_config)
+    optimized_plan, optimized_time, optimized_cost, optimized_indexes = analyze_query(optimized_query_base, db1_config)
     
     optimized_data = {
         'query': optimized_sql, 'plan': optimized_plan, 
-        'total_time_ms': optimized_time, 'planner_cost': optimized_cost
+        'total_time_ms': optimized_time, 'planner_cost': optimized_cost,
+        'indexes': optimized_indexes
     }
 
     hints_raw = optimized_sql.split('--')[1:]
